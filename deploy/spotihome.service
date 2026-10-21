@@ -1,0 +1,24 @@
+[Unit]
+Description=Spotihome, client musical Spotify / Deezer / YouTube Music
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=spotihome
+Group=spotihome
+WorkingDirectory=/opt/spotihome
+ExecStart=/usr/bin/node /opt/spotihome/server/index.js
+Restart=on-failure
+RestartSec=3
+Environment=NODE_ENV=production
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+# Permet d'écouter sur un port < 1024 (ex. 443) sans être root
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

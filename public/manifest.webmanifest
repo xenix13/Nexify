@@ -1,0 +1,10 @@
+{
+  "name": "Spotihome",
+  "short_name": "Spotihome",
+  "description": "Spotify, Deezer et YouTube Music dans une seule appli, chez toi.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#141a2e",
+  "theme_color": "#141a2e",
+  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

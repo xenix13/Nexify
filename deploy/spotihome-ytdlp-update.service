@@ -1,0 +1,8 @@
+[Unit]
+Description=Mise à jour de yt-dlp pour Spotihome
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/yt-dlp --update

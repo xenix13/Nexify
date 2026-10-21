@@ -1,0 +1,10 @@
+[Unit]
+Description=Mise à jour quotidienne de yt-dlp (YouTube change souvent)
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=2h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

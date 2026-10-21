@@ -1,0 +1,16 @@
+{
+  "name": "spotihome",
+  "version": "0.1.0",
+  "description": "Client musical auto-hébergé qui réunit Spotify, Deezer et YouTube Music dans une seule appli",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "test": "node --test test/*.test.js"
+  }
+}
