@@ -115,6 +115,37 @@ export function parseLibraryPlaylists(json) {
   return out;
 }
 
+// File « radio » (endpoint next) : titres similaires à partir d'un titre de départ
+export function parseRadio(json) {
+  const out = [];
+  const seen = new Set();
+  for (const r of collect(json, 'playlistPanelVideoRenderer')) {
+    const videoId = r?.videoId;
+    if (!videoId || seen.has(videoId)) continue;
+    seen.add(videoId);
+    const by = r.longBylineText?.runs || [];
+    let artists = by.filter((x) => pageType(x) === 'MUSIC_PAGE_TYPE_ARTIST' || pageType(x) === 'MUSIC_PAGE_TYPE_USER_CHANNEL').map((x) => x.text);
+    if (!artists.length) {
+      const s = runsText(r.shortBylineText?.runs) || (by[0]?.text || '');
+      if (s) artists = [s];
+    }
+    const album = by.find((x) => pageType(x) === 'MUSIC_PAGE_TYPE_ALBUM')?.text || '';
+    const explicit = collect(r.badges, 'musicInlineBadgeRenderer').some((b) => b?.icon?.iconType === 'MUSIC_EXPLICIT_BADGE');
+    out.push(makeTrack({
+      source: 'ytm',
+      sourceId: videoId,
+      title: runsText(r.title?.runs),
+      artists: [...new Set(artists)],
+      album,
+      duration: parseDuration(runsText(r.lengthText?.runs)),
+      artwork: bestThumb(r.thumbnail?.thumbnails),
+      uri: `${ORIGIN}/watch?v=${videoId}`,
+      explicit,
+    }));
+  }
+  return out;
+}
+
 export function continuationToken(json) {
   return first(json, 'continuationCommand')?.token || first(json, 'nextContinuationData')?.continuation || null;
 }
@@ -176,7 +207,7 @@ export class YtMusicProvider {
       }),
     });
     if (r.status === 401 || r.status === 403) {
-      throw new HttpError(409, 'YouTube Music refuse les cookies enregistrés : recolle-les dans les réglages.', { provider: 'ytm', code: 'not_linked' });
+      throw new HttpError(409, 'YouTube Music a refusé les cookies enregistrés. Collez-les à nouveau dans les paramètres.', { provider: 'ytm', code: 'not_linked' });
     }
     if (r.status === 404) throw new HttpError(404, 'YouTube Music : élément introuvable', { provider: 'ytm' });
     if (!r.ok) throw new HttpError(502, `YouTube Music : HTTP ${r.status}`, { provider: 'ytm' });
@@ -185,7 +216,7 @@ export class YtMusicProvider {
 
   async link(user, cookie) {
     const c = String(cookie || '').replace(/^cookie:\s*/i, '').trim();
-    if (!sapisidHash(c)) throw new HttpError(400, 'Cookie incomplet : il doit contenir SAPISID (copie tout l’en-tête Cookie d’une requête vers music.youtube.com).');
+    if (!sapisidHash(c)) throw new HttpError(400, 'Cookie incomplet : il doit contenir SAPISID. Copiez l’intégralité de l’en-tête Cookie d’une requête vers music.youtube.com.');
     user.ytm = { ...(user.ytm || {}), cookie: this.cipher.encrypt(c) };
     let name = 'Compte YouTube Music';
     try {
@@ -250,6 +281,18 @@ export class YtMusicProvider {
       token = next;
     }
     return { source: 'ytm', id: pid, name: pid === 'LM' ? 'Titres « J’aime » (YouTube Music)' : header.name, image: header.image, owner: header.owner, tracks };
+  }
+
+  // radio YouTube Music (mix automatique) à partir d'un titre
+  async radio(videoId) {
+    const json = await this._call('next', {
+      videoId,
+      playlistId: `RDAMVM${videoId}`,
+      isAudioOnly: true,
+      enablePersistentPlaylistPanel: true,
+      tunerSettingValue: 'AUTOMIX_SETTING_NORMAL',
+    }, null);
+    return parseRadio(json).filter((t) => t.sourceId !== videoId);
   }
 
   // playlists publiques ajoutées par lien, sans compte

@@ -3,11 +3,13 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { makeCipher, hashPassword, verifyPassword } from '../server/crypto.js';
 import { normalize, bestMatch, scoreCandidate } from '../server/match.js';
-import { parseTracks, parsePlaylistHeader, parseLibraryPlaylists, continuationToken, parseYtmPlaylist, sapisidHash, bestThumb } from '../server/providers/ytmusic.js';
+import { parseRadio, parseTracks, parsePlaylistHeader, parseLibraryPlaylists, continuationToken, parseYtmPlaylist, sapisidHash, bestThumb } from '../server/providers/ytmusic.js';
 import { mapDeezerTrack, parseDeezerProfile } from '../server/providers/deezer.js';
 import { mapSpotifyTrack } from '../server/providers/spotify.js';
 import { sanitizeTrack, parseDuration } from '../server/track.js';
 import { Router } from '../server/http.js';
+import { allowedUrl, IMAGE_HOSTS, AUDIO_HOSTS } from '../server/proxy.js';
+import { mergeUserData, TOMBSTONE_TTL } from '../public/js/merge.js';
 import * as fx from './fixtures.js';
 
 test('chiffrement aller-retour et refus d’un texte altéré', () => {
@@ -133,4 +135,73 @@ test('routeur : paramètres et méthode non autorisée', () => {
   assert.deepEqual(m.params, { source: 'ytm', id: 'PL x' });
   assert.equal(r.match('POST', '/api/c/ytm/x').methodNotAllowed, true);
   assert.equal(r.match('GET', '/api/autre'), null);
+});
+
+test('YouTube Music : radio (titres similaires), y compris les éléments enveloppés', () => {
+  const tracks = parseRadio(fx.ytmRadioResponse([
+    { videoId: 'aaaaaaaaaaa', title: 'Get Lucky', artist: 'Daft Punk', album: 'RAM', duration: '6:09' },
+    { videoId: 'bbbbbbbbbbb', title: 'Instant Crush', artist: 'Daft Punk', album: 'RAM', duration: '5:37' },
+    { videoId: 'aaaaaaaaaaa', title: 'Doublon', artist: 'X', album: 'Y', duration: '1:00' },
+  ]));
+  assert.deepEqual(tracks.map((t) => t.key), ['ytm:aaaaaaaaaaa', 'ytm:bbbbbbbbbbb']);
+  assert.deepEqual(tracks[1].artists, ['Daft Punk']);
+  assert.equal(tracks[1].album, 'RAM');
+  assert.equal(tracks[1].duration, 337);
+});
+
+test('relais : seuls les CDN des services sont acceptés, en HTTPS', () => {
+  assert.ok(allowedUrl('https://i.scdn.co/image/abc', IMAGE_HOSTS));
+  assert.ok(allowedUrl('https://lh3.googleusercontent.com/x=w120', IMAGE_HOSTS));
+  assert.ok(allowedUrl('https://e-cdns-images.dzcdn.net/images/cover/1/250x250.jpg', IMAGE_HOSTS));
+  assert.equal(allowedUrl('http://i.scdn.co/image/abc', IMAGE_HOSTS), null);
+  assert.equal(allowedUrl('https://evil.example/x.png', IMAGE_HOSTS), null);
+  assert.equal(allowedUrl('https://scdn.co.evil.example/x.png', IMAGE_HOSTS), null);
+  assert.equal(allowedUrl('https://127.0.0.1/x', IMAGE_HOSTS), null);
+  assert.ok(allowedUrl('https://cdnt-preview.dzcdn.net/1.mp3', AUDIO_HOSTS));
+  assert.equal(allowedUrl('https://lh3.googleusercontent.com/x', AUDIO_HOSTS), null);
+});
+
+test('fusion des données entre appareils : la modification la plus récente gagne', () => {
+  const now = Date.now();
+  const phone = {
+    playlists: {
+      p1: { id: 'p1', name: 'Route (téléphone)', tracks: [], updatedAt: now - 1000 },
+      p2: { id: 'p2', deleted: true, updatedAt: now - 500 },
+    },
+    likes: { 'ytm:a': { key: 'ytm:a', track: { key: 'ytm:a' }, at: now - 100, updatedAt: now - 100 } },
+  };
+  const server = {
+    playlists: {
+      p1: { id: 'p1', name: 'Route (ordinateur)', tracks: [], updatedAt: now - 2000 },
+      p2: { id: 'p2', name: 'Ancienne', tracks: [], updatedAt: now - 3000 },
+      p3: { id: 'p3', name: 'Créée ailleurs', tracks: [], updatedAt: now - 10 },
+      old: { id: 'old', deleted: true, updatedAt: now - TOMBSTONE_TTL - 1000 },
+    },
+    likes: { 'ytm:a': { key: 'ytm:a', removed: true, updatedAt: now - 50 } },
+  };
+  const m = mergeUserData(server, phone, now);
+  assert.equal(m.playlists.p1.name, 'Route (téléphone)');
+  assert.equal(m.playlists.p2.deleted, true, 'la suppression faite hors ligne se propage');
+  assert.equal(m.playlists.p3.name, 'Créée ailleurs');
+  assert.equal(m.playlists.old, undefined, 'les vieilles suppressions sont oubliées');
+  assert.equal(m.likes['ytm:a'].removed, true, '« Je n’aime plus » plus récent gagne');
+  assert.deepEqual(mergeUserData(m, m, now), m, 'idempotent');
+});
+
+test('base : reprise d’une installation Spotihome (playlists → données synchronisées)', async () => {
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const { Store } = await import('../server/store.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nexify-migr-'));
+  fs.writeFileSync(path.join(dir, 'spotihome.json'), JSON.stringify({
+    version: 1, users: { u1: { id: 'u1', username: 'colas' } }, sessions: {}, oauthStates: {},
+    playlists: { pl1: { id: 'pl1', ownerId: 'u1', name: 'Ancienne', tracks: [], createdAt: 1, updatedAt: 2 } },
+  }));
+  const s = new Store(dir);
+  assert.equal(s.userData('u1').playlists.pl1.name, 'Ancienne');
+  assert.equal(s.data.playlists, undefined);
+  s.flush();
+  assert.ok(fs.existsSync(path.join(dir, 'nexify.json')));
+  fs.rmSync(dir, { recursive: true, force: true });
 });

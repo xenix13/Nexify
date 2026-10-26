@@ -1,18 +1,33 @@
 // Petite base JSON : tout tient en mémoire, écriture atomique et différée sur disque.
 import fs from 'node:fs';
 import path from 'node:path';
+import { emptyUserData } from '../public/js/merge.js';
 
-const EMPTY = () => ({ version: 1, users: {}, sessions: {}, playlists: {}, oauthStates: {} });
+const EMPTY = () => ({ version: 2, users: {}, sessions: {}, userdata: {}, oauthStates: {}, matches: {} });
 
 export class Store {
   constructor(dataDir) {
-    this.file = path.join(dataDir, 'spotihome.json');
+    this.file = path.join(dataDir, 'nexify.json');
     fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
     this.data = EMPTY();
-    if (fs.existsSync(this.file)) {
-      this.data = { ...EMPTY(), ...JSON.parse(fs.readFileSync(this.file, 'utf8')) };
-    }
+    const legacy = path.join(dataDir, 'spotihome.json');
+    const source = fs.existsSync(this.file) ? this.file : fs.existsSync(legacy) ? legacy : null;
+    if (source) this.data = { ...EMPTY(), ...JSON.parse(fs.readFileSync(source, 'utf8')) };
+    this._migrate();
     this._timer = null;
+  }
+
+  // version 1 : playlists stockées à plat côté serveur → données utilisateur synchronisées
+  _migrate() {
+    const old = this.data.playlists;
+    if (old && typeof old === 'object') {
+      for (const p of Object.values(old)) {
+        const ud = this.userData(p.ownerId);
+        ud.playlists[p.id] = { id: p.id, name: p.name, tracks: p.tracks || [], createdAt: p.createdAt || Date.now(), updatedAt: p.updatedAt || Date.now() };
+      }
+      delete this.data.playlists;
+    }
+    this.data.version = 2;
   }
 
   save() {
@@ -25,7 +40,7 @@ export class Store {
     clearTimeout(this._timer);
     this._timer = null;
     const tmp = `${this.file}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(this.data, null, 2), { mode: 0o600 });
+    fs.writeFileSync(tmp, JSON.stringify(this.data), { mode: 0o600 });
     fs.renameSync(tmp, this.file);
   }
 
@@ -39,8 +54,8 @@ export class Store {
   putUser(u) { this.data.users[u.id] = u; this.save(); return u; }
   deleteUser(id) {
     delete this.data.users[id];
+    delete this.data.userdata[id];
     for (const [sid, s] of Object.entries(this.data.sessions)) if (s.userId === id) delete this.data.sessions[sid];
-    for (const [pid, p] of Object.entries(this.data.playlists)) if (p.ownerId === id) delete this.data.playlists[pid];
     this.save();
   }
 
@@ -68,13 +83,10 @@ export class Store {
     return v && v.expiresAt > Date.now() ? v : null;
   }
 
-  // --- playlists Spotihome (mélangeant les sources)
-  playlistsOf(userId) {
-    return Object.values(this.data.playlists)
-      .filter((p) => p.ownerId === userId)
-      .sort((a, b) => b.updatedAt - a.updatedAt);
+  // --- données synchronisées de chaque utilisateur (playlists, titres « J'aime »)
+  userData(userId) {
+    if (!this.data.userdata[userId]) this.data.userdata[userId] = emptyUserData();
+    return this.data.userdata[userId];
   }
-  playlist(id) { return this.data.playlists[id] || null; }
-  putPlaylist(p) { p.updatedAt = Date.now(); this.data.playlists[p.id] = p; this.save(); return p; }
-  deletePlaylist(id) { delete this.data.playlists[id]; this.save(); }
+  putUserData(userId, data) { this.data.userdata[userId] = data; this.save(); return data; }
 }

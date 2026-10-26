@@ -1,14 +1,14 @@
 [Unit]
-Description=Spotihome, client musical Spotify / Deezer / YouTube Music
+Description=Nexify, lecteur de musique auto-hébergé
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=spotihome
-Group=spotihome
-WorkingDirectory=/opt/spotihome
-ExecStart=/usr/bin/node /opt/spotihome/server/index.js
+User=nexify
+Group=nexify
+WorkingDirectory=/opt/nexify
+ExecStart=/usr/bin/node /opt/nexify/server/index.js
 Restart=on-failure
 RestartSec=3
 Environment=NODE_ENV=production

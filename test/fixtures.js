@@ -94,3 +94,22 @@ export const spotifyTrack = (id, name, artist, ms) => ({
   artists: [{ name: artist }],
   album: { name: 'Album', images: [{ url: `https://i.scdn.co/image/${id}-640`, width: 640 }, { url: `https://i.scdn.co/image/${id}-300`, width: 300 }, { url: `https://i.scdn.co/image/${id}-64`, width: 64 }] },
 });
+
+// Réponse « next » (radio / file automatique) de YouTube Music
+export function ytmRadioResponse(items) {
+  const panel = (it) => ({
+    playlistPanelVideoRenderer: {
+      videoId: it.videoId,
+      title: { runs: [{ text: it.title }] },
+      longBylineText: { runs: [artistRun(it.artist), { text: ' • ' }, albumRun(it.album), { text: ' • ' }, { text: '2013' }] },
+      shortBylineText: { runs: [{ text: it.artist }] },
+      lengthText: { runs: [{ text: it.duration }] },
+      thumbnail: { thumbnails: [{ url: `https://i.ytimg.com/vi/${it.videoId}/hqdefault.jpg`, width: 480 }] },
+    },
+  });
+  return {
+    contents: { singleColumnMusicWatchNextResultsRenderer: { tabbedRenderer: { watchNextTabbedResultsRenderer: { tabs: [{ tabRenderer: { content: { musicQueueRenderer: { content: { playlistPanelRenderer: {
+      contents: items.map((it, i) => (i === 1 ? { playlistPanelVideoWrapperRenderer: { primaryRenderer: panel(it) } } : panel(it))),
+    } } } } } }] } } } },
+  };
+}
