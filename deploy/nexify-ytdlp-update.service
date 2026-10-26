@@ -1,5 +1,5 @@
 [Unit]
-Description=Mise à jour de yt-dlp pour Spotihome
+Description=Mise à jour de yt-dlp pour Nexify
 After=network-online.target
 Wants=network-online.target
 

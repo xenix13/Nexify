@@ -53,6 +53,13 @@ async function fakeFetch(input, opts = {}) {
       if (/Voyager/i.test(body.query)) return json(fx.ytmSearchResponse([{ videoId: 'zzzzzzzzzzz', title: 'Something Else', artist: 'Nobody', album: 'N', duration: '1:00' }]));
       return json(fx.ytmSearchResponse([{ videoId: 'abcdefghijk', title: 'Get Lucky', artist: 'Daft Punk', album: 'RAM', duration: '6:09' }]));
     }
+    if (url.pathname.endsWith('/next')) {
+      return json(fx.ytmRadioResponse([
+        { videoId: body.videoId, title: 'Seed', artist: 'Daft Punk', album: 'RAM', duration: '6:09' },
+        { videoId: 'rrrrrrrrrr1', title: 'Instant Crush', artist: 'Daft Punk', album: 'RAM', duration: '5:37' },
+        { videoId: 'rrrrrrrrrr2', title: 'Lose Yourself to Dance', artist: 'Daft Punk', album: 'RAM', duration: '5:53' },
+      ]));
+    }
     if (url.pathname.endsWith('/account/account_menu')) return json({ actions: [{ openPopupAction: { popup: { multiPageMenuRenderer: { header: { activeAccountHeaderRenderer: { accountName: { runs: [{ text: 'Colas YT' }] } } } } } } }] });
     if (url.pathname.endsWith('/browse')) {
       if (body.browseId === 'FEmusic_liked_playlists') return json(fx.ytmLibrary([{ id: 'PLytm0000001', name: 'Route' }]));
@@ -61,6 +68,13 @@ async function fakeFetch(input, opts = {}) {
       }
       if (body.continuation === 'C1') return json(fx.ytmContinuation([{ videoId: 'bbbbbbbbbbb', title: 'Deux', artist: 'B', album: 'Y', duration: '2:00' }]));
     }
+  }
+  if (url.host === 'i.scdn.co') {
+    if (url.pathname.includes('not-image')) return new Response('<html>', { status: 200, headers: { 'content-type': 'text/html' } });
+    return new Response(Buffer.from('PNGDATA'), { status: 200, headers: { 'content-type': 'image/jpeg', 'content-length': '7' } });
+  }
+  if (url.host === 'cdnt-preview.dzcdn.net') {
+    return new Response(AUDIO.subarray(0, 300), { status: 200, headers: { 'content-type': 'audio/mpeg', 'content-length': '300' } });
   }
   if (url.host === 'rr1.googlevideo.example') {
     const range = opts.headers?.range;
@@ -96,7 +110,7 @@ let base;
 let dir;
 
 before(async () => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'spotihome-test-'));
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nexify-test-'));
   const config = getConfig({ APP_SECRET: 'secret-de-test-assez-long', DATA_DIR: dir, PORT: '0', SPOTIFY_CLIENT_ID: 'cid', SPOTIFY_CLIENT_SECRET: 'csecret', PUBLIC_URL: 'https://hifi.local:8443' });
   app = createApp(config, { fetch: fakeFetch, spawn: fakeSpawn });
   server = http.createServer((q, s) => app.handle(q, s));
@@ -109,7 +123,7 @@ after(() => { server.close(); fs.rmSync(dir, { recursive: true, force: true }); 
 function client() {
   let cookie = '';
   return async function call(method, p, body, extra = {}) {
-    const headers = { 'x-spotihome': '1', ...(cookie ? { cookie } : {}), ...(extra.headers || {}) };
+    const headers = { 'x-nexify': '1', ...(cookie ? { cookie } : {}), ...(extra.headers || {}) };
     if (body !== undefined) headers['content-type'] = 'application/json';
     const r = await fetch(base + p, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), redirect: 'manual' });
     const set = r.headers.get('set-cookie');
@@ -137,7 +151,7 @@ test('premier compte = administrateur, puis inscriptions fermées', async () => 
 });
 
 test('protection CSRF sur les écritures', async () => {
-  const r = await admin('POST', '/api/playlists', { name: 'x' }, { headers: { 'x-spotihome': '' } });
+  const r = await admin('POST', '/api/sync', { playlists: {} }, { headers: { 'x-nexify': '' } });
   assert.equal(r.status, 403);
 });
 
@@ -186,7 +200,7 @@ test('liaison Spotify par OAuth avec PKCE', async () => {
 
   // les jetons sont chiffrés sur disque
   app.store.flush();
-  const raw = fs.readFileSync(path.join(dir, 'spotihome.json'), 'utf8');
+  const raw = fs.readFileSync(path.join(dir, 'nexify.json'), 'utf8');
   assert.ok(!raw.includes('rt-1'));
 });
 
@@ -224,8 +238,15 @@ test('bibliothèque réunie et contenu des playlists', async () => {
 
 test('plan de lecture : Spotify via SDK, Deezer via correspondance YouTube Music', async () => {
   const sp = (await admin('GET', '/api/search?q=x&sources=spotify')).data.results.spotify.tracks[0];
+  // par défaut, tout passe par le moteur audio de Nexify (version YouTube Music)
   let r = await admin('POST', '/api/resolve', { track: sp });
+  assert.equal(r.data.plan.mode, 'audio');
+  await admin('PATCH', '/api/me/settings', { spotifyPlayback: 'sdk' });
+  r = await admin('POST', '/api/resolve', { track: sp });
   assert.deepEqual(r.data.plan, { mode: 'spotify', uri: 'spotify:track:sp1' });
+  // un téléchargement veut toujours un fichier complet
+  r = await admin('POST', '/api/resolve', { track: sp, download: true });
+  assert.equal(r.data.plan.mode, 'audio');
   r = await admin('POST', '/api/resolve', { track: sp, prefer: 'ytm' });
   assert.equal(r.data.plan.mode, 'audio');
 
@@ -236,6 +257,9 @@ test('plan de lecture : Spotify via SDK, Deezer via correspondance YouTube Music
   // pas de correspondance fiable : extrait Deezer
   r = await admin('POST', '/api/resolve', { track: col.tracks[1] });
   assert.equal(r.data.plan.preview, true);
+  assert.match(r.data.plan.url, /^\/api\/preview\?u=https%3A%2F%2Fcdnt-preview\.dzcdn\.net/, 'extrait relayé (même origine pour Web Audio)');
+  r = await admin('POST', '/api/resolve', { track: col.tracks[1], download: true });
+  assert.equal(r.status, 404, 'pas de téléchargement d’un simple extrait');
 
   await admin('PATCH', '/api/me/settings', { deezerPlayback: 'preview' });
   r = await admin('POST', '/api/resolve', { track: col.tracks[0] });
@@ -257,30 +281,98 @@ test('relais audio YouTube avec requêtes partielles (avance rapide)', async () 
   assert.equal(r.status, 200, 'tout utilisateur connecté peut lire');
 });
 
-test('playlists Spotihome mélangées et import', async () => {
+test('synchronisation : playlists et « J’aime » fusionnés entre appareils, privés par utilisateur', async () => {
   const sp = (await admin('GET', '/api/search?q=x&sources=spotify')).data.results.spotify.tracks[0];
   const yt = (await admin('GET', '/api/search?q=x&sources=ytm')).data.results.ytm.tracks[0];
-  let r = await admin('POST', '/api/playlists', { name: 'Mix', tracks: [sp] });
-  const id = r.data.playlist.id;
-  r = await admin('POST', `/api/playlists/${id}/tracks`, { tracks: [yt, sp] });
-  assert.equal(r.data.added, 1);
-  assert.deepEqual(r.data.playlist.tracks.map((t) => t.source), ['spotify', 'ytm']);
-
-  r = await guest('GET', `/api/playlists/${id}`);
-  assert.equal(r.status, 404, 'les playlists sont privées');
-
-  r = await admin('PATCH', `/api/playlists/${id}`, { name: 'Mix du soir', tracks: [yt] });
-  assert.equal(r.data.playlist.name, 'Mix du soir');
-  assert.equal(r.data.playlist.tracks.length, 1);
-
-  r = await admin('POST', '/api/import', { source: 'deezer', id: '9' });
-  assert.equal(r.data.playlist.name, 'Été');
-  assert.equal(r.data.playlist.count, 2);
-
-  r = await admin('GET', '/api/playlists');
-  assert.equal(r.data.playlists.length, 2);
-  r = await admin('DELETE', `/api/playlists/${id}`);
+  const t0 = Date.now() - 10_000;
+  // appareil 1 : crée une playlist mélangée et aime un titre
+  let r = await admin('POST', '/api/sync', {
+    playlists: { mixMix0001: { id: 'mixMix0001', name: 'Mix', tracks: [sp, yt], createdAt: t0, updatedAt: t0 } },
+    likes: { [yt.key]: { key: yt.key, track: yt, at: t0, updatedAt: t0 } },
+  });
   assert.equal(r.status, 200);
+  assert.deepEqual(r.data.data.playlists.mixMix0001.tracks.map((t) => t.source), ['spotify', 'ytm']);
+  // appareil 2 (hors ligne pendant ce temps) : renomme plus tard, et ajoute des données invalides
+  r = await admin('POST', '/api/sync', {
+    playlists: {
+      mixMix0001: { id: 'mixMix0001', name: 'Mix du soir', tracks: [yt], updatedAt: t0 + 5000 },
+      'bad id!': { id: 'bad id!', name: 'x', tracks: [], updatedAt: t0 },
+      vide000001: { id: 'vide000001', name: '   ', tracks: [], updatedAt: t0 },
+    },
+    likes: { 'ytm:faux': { key: 'ytm:autre', track: yt, updatedAt: t0 } },
+  });
+  assert.equal(r.data.data.playlists.mixMix0001.name, 'Mix du soir');
+  assert.equal(r.data.data.playlists['bad id!'], undefined);
+  assert.equal(r.data.data.playlists.vide000001, undefined);
+  assert.equal(r.data.data.likes['ytm:faux'], undefined);
+  assert.ok(r.data.data.likes[yt.key], 'le « J’aime » de l’autre appareil est conservé');
+  // un envoi plus ancien ne remplace pas la version récente
+  r = await admin('POST', '/api/sync', { playlists: { mixMix0001: { id: 'mixMix0001', name: 'Vieux nom', tracks: [], updatedAt: t0 + 1000 } } });
+  assert.equal(r.data.data.playlists.mixMix0001.name, 'Mix du soir');
+  // suppression
+  r = await admin('POST', '/api/sync', { playlists: { mixMix0001: { id: 'mixMix0001', deleted: true, updatedAt: t0 + 6000 } } });
+  assert.equal(r.data.data.playlists.mixMix0001.deleted, true);
+  // les données sont propres à chaque utilisateur
+  r = await guest('GET', '/api/sync');
+  assert.deepEqual(r.data.data.playlists, {});
+  r = await admin('GET', '/api/sync');
+  assert.ok(r.data.data.likes[yt.key]);
+});
+
+test('relais des pochettes et des extraits (même origine, hôtes autorisés seulement)', async () => {
+  let r = await admin('GET', `/api/img?u=${encodeURIComponent('https://i.scdn.co/image/abc')}`);
+  assert.equal(r.status, 200);
+  assert.equal(r.headers.get('content-type'), 'image/jpeg');
+  assert.equal(r.data.toString(), 'PNGDATA');
+  r = await admin('GET', `/api/img?u=${encodeURIComponent('https://i.scdn.co/not-image')}`);
+  assert.equal(r.status, 502);
+  r = await admin('GET', `/api/img?u=${encodeURIComponent('https://evil.example/a.png')}`);
+  assert.equal(r.status, 400);
+  r = await fetch(`${base}/api/img?u=${encodeURIComponent('https://i.scdn.co/image/abc')}`);
+  assert.equal(r.status, 401, 'réservé aux utilisateurs connectés');
+  r = await admin('GET', `/api/preview?u=${encodeURIComponent('https://cdnt-preview.dzcdn.net/11.mp3')}`);
+  assert.equal(r.status, 200);
+  assert.equal(r.data.length, 300);
+});
+
+test('radio : titres similaires à partir d’un titre YouTube Music ou Deezer', async () => {
+  const yt = (await admin('GET', '/api/search?q=x&sources=ytm')).data.results.ytm.tracks[0];
+  let r = await admin('POST', '/api/radio', { track: yt });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.data.tracks.map((t) => t.title), ['Instant Crush', 'Lose Yourself to Dance'], 'sans le titre de départ');
+  const dz = (await admin('GET', '/api/collection/deezer/9')).data.collection.tracks[0];
+  r = await admin('POST', '/api/radio', { track: dz });
+  assert.equal(r.status, 200);
+  const next = calls.filter((c) => c.path.endsWith('/next')).pop();
+  assert.equal(JSON.parse(next.body).videoId, 'FGBhQbmPwH8', 'via la correspondance YouTube Music');
+});
+
+test('service worker : liste des fichiers et empreinte de version', async () => {
+  const r = await fetch(`${base}/sw.js`);
+  assert.equal(r.status, 200);
+  assert.equal(r.headers.get('cache-control'), 'no-cache');
+  const body = await r.text();
+  assert.doesNotMatch(body, /__BUILD__|__ASSETS__/);
+  assert.match(body, /const BUILD = '1\.0\.0-[0-9a-f]{10}'/);
+  const assets = JSON.parse(body.match(/const ASSETS = (\[.*?\]);/)[1]);
+  for (const a of ['/', '/css/style.css', '/js/app.js', '/js/audio.js', '/manifest.webmanifest', '/icons/icon-192.png']) assert.ok(assets.includes(a), a);
+  assert.ok(!assets.includes('/sw.js'));
+  const m = await fetch(`${base}/manifest.webmanifest`);
+  assert.equal(m.headers.get('content-type'), 'application/manifest+json');
+  const etag = m.headers.get('etag');
+  const again = await fetch(`${base}/manifest.webmanifest`, { headers: { 'if-none-match': etag } });
+  assert.equal(again.status, 304);
+});
+
+test('suppression d’un compte : ses données synchronisées disparaissent', async () => {
+  const users = (await admin('GET', '/api/users')).data.users;
+  const lea = users.find((u) => u.username === 'lea');
+  await guest('POST', '/api/sync', { playlists: { lea0000001: { id: 'lea0000001', name: 'Léa', tracks: [], updatedAt: Date.now() } } });
+  assert.ok(app.store.data.userdata[lea.id].playlists.lea0000001);
+  const r = await admin('DELETE', `/api/users/${lea.id}`);
+  assert.equal(r.status, 200);
+  assert.equal(app.store.data.userdata[lea.id], undefined);
+  assert.equal((await guest('GET', '/api/sync')).status, 401);
 });
 
 test('fichiers statiques et en-têtes de sécurité', async () => {

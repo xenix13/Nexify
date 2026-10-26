@@ -49,9 +49,9 @@ export class DeezerProvider {
     if (data?.error) {
       const code = data.error.code;
       if (code === 800) throw new HttpError(404, 'Deezer : élément introuvable', { provider: 'deezer' });
-      if (code === 4) throw new HttpError(429, 'Deezer limite les requêtes, réessaie dans un instant.', { provider: 'deezer' });
+      if (code === 4) throw new HttpError(429, 'Deezer limite temporairement les requêtes. Réessayez dans un instant.', { provider: 'deezer' });
       if (code === 200 || data.error.type === 'OAuthException') {
-        throw new HttpError(403, 'Deezer : ce contenu n’est pas public (vérifie la confidentialité de ton profil).', { provider: 'deezer' });
+        throw new HttpError(403, 'Ce contenu Deezer n’est pas public. Vérifiez la confidentialité de votre profil.', { provider: 'deezer' });
       }
       throw new HttpError(502, `Deezer : ${data.error.message || 'erreur'}`, { provider: 'deezer' });
     }

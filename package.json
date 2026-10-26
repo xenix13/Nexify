@@ -1,7 +1,7 @@
 {
-  "name": "spotihome",
-  "version": "0.1.0",
-  "description": "Client musical auto-hébergé qui réunit Spotify, Deezer et YouTube Music dans une seule appli",
+  "name": "nexify",
+  "version": "1.0.0",
+  "description": "Lecteur de musique auto-hébergé façon YouTube Music : application installable (PWA), hors connexion, téléchargements, égaliseur et fondu enchaîné",
   "type": "module",
   "private": true,
   "license": "MIT",

@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# Installation / mise à jour de Spotihome sur Ubuntu ou Debian (conteneur LXC ou VM), en root.
-#   curl -fsSL https://raw.githubusercontent.com/xenix13/spotihome/main/deploy/install.sh | bash
-# Relancer le script met à jour Spotihome (git pull) et yt-dlp, sans toucher au fichier .env.
+# Installation / mise à jour de Nexify sur Ubuntu ou Debian (conteneur LXC ou VM), en root.
+#   curl -fsSL https://raw.githubusercontent.com/xenix13/nexify/main/deploy/install.sh | bash
+# Relancer le script met à jour Nexify (git pull) et yt-dlp, sans toucher au fichier .env.
 set -euo pipefail
 
-REPO="${SPOTIHOME_REPO:-https://github.com/xenix13/spotihome.git}"
-BRANCH="${SPOTIHOME_BRANCH:-main}"
-APP_DIR="${SPOTIHOME_DIR:-/opt/spotihome}"
-PORT="${SPOTIHOME_PORT:-8443}"
-SVC_USER=spotihome
+REPO="${NEXIFY_REPO:-https://github.com/xenix13/nexify.git}"
+BRANCH="${NEXIFY_BRANCH:-main}"
+APP_DIR="${NEXIFY_DIR:-/opt/nexify}"
+PORT="${NEXIFY_PORT:-8443}"
+SVC_USER=nexify
 
 say() { printf '\n\033[1;33m==> %s\033[0m\n' "$*"; }
-[ "$(id -u)" -eq 0 ] || { echo "Lance ce script en root (sudo)."; exit 1; }
+[ "$(id -u)" -eq 0 ] || { echo "Lancez ce script en root (sudo)."; exit 1; }
 
 case "$(uname -m)" in
   x86_64) YTDLP_ASSET=yt-dlp_linux; DENO_ARCH=x86_64-unknown-linux-gnu ;;
@@ -47,7 +47,7 @@ if ! command -v deno >/dev/null; then
   rm -rf "$tmp"
 fi
 
-say "Code de Spotihome dans $APP_DIR"
+say "Code de Nexify dans $APP_DIR"
 id "$SVC_USER" >/dev/null 2>&1 || useradd --system --home "$APP_DIR" --shell /usr/sbin/nologin "$SVC_USER"
 if [ -d "$APP_DIR/.git" ]; then
   git -C "$APP_DIR" fetch -q origin "$BRANCH"
@@ -59,22 +59,15 @@ else
 fi
 git config --global --add safe.directory "$APP_DIR" || true
 
-if [ ! -f "$APP_DIR/public/fonts/archivo.ttf" ]; then
-  say "Police Archivo (facultative)"
-  mkdir -p "$APP_DIR/public/fonts"
-  curl -fsSL "https://raw.githubusercontent.com/google/fonts/main/ofl/archivo/Archivo%5Bwdth%2Cwght%5D.ttf" -o "$APP_DIR/public/fonts/archivo.ttf" \
-    || echo "Police non téléchargée, l'interface utilisera les polices du système."
-fi
-
 IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 IP="${IP:-127.0.0.1}"
 
 mkdir -p "$APP_DIR/data" "$APP_DIR/certs"
-if [ ! -f "$APP_DIR/certs/spotihome.crt" ]; then
+if [ ! -f "$APP_DIR/certs/nexify.crt" ]; then
   say "Certificat HTTPS auto-signé pour $IP"
   openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
-    -keyout "$APP_DIR/certs/spotihome.key" -out "$APP_DIR/certs/spotihome.crt" \
-    -subj "/CN=spotihome" -addext "subjectAltName=IP:${IP},DNS:spotihome,DNS:localhost" 2>/dev/null
+    -keyout "$APP_DIR/certs/nexify.key" -out "$APP_DIR/certs/nexify.crt" \
+    -subj "/CN=nexify" -addext "subjectAltName=IP:${IP},DNS:nexify,DNS:localhost" 2>/dev/null
 fi
 
 if [ ! -f "$APP_DIR/.env" ]; then
@@ -83,8 +76,8 @@ if [ ! -f "$APP_DIR/.env" ]; then
     -e "s|^APP_SECRET=.*|APP_SECRET=$(openssl rand -hex 32)|" \
     -e "s|^PORT=.*|PORT=${PORT}|" \
     -e "s|^PUBLIC_URL=.*|PUBLIC_URL=https://${IP}:${PORT}|" \
-    -e "s|^TLS_CERT=.*|TLS_CERT=${APP_DIR}/certs/spotihome.crt|" \
-    -e "s|^TLS_KEY=.*|TLS_KEY=${APP_DIR}/certs/spotihome.key|" \
+    -e "s|^TLS_CERT=.*|TLS_CERT=${APP_DIR}/certs/nexify.crt|" \
+    -e "s|^TLS_KEY=.*|TLS_KEY=${APP_DIR}/certs/nexify.key|" \
     -e "s|^DATA_DIR=.*|DATA_DIR=${APP_DIR}/data|" \
     "$APP_DIR/.env.example" > "$APP_DIR/.env"
   chmod 600 "$APP_DIR/.env"
@@ -92,23 +85,27 @@ fi
 chown -R "$SVC_USER:$SVC_USER" "$APP_DIR"
 
 say "Service systemd"
-sed "s|/opt/spotihome|${APP_DIR}|g" "$APP_DIR/deploy/spotihome.service" > /etc/systemd/system/spotihome.service
-cp "$APP_DIR/deploy/spotihome-ytdlp-update.service" "$APP_DIR/deploy/spotihome-ytdlp-update.timer" /etc/systemd/system/
+sed "s|/opt/nexify|${APP_DIR}|g" "$APP_DIR/deploy/nexify.service" > /etc/systemd/system/nexify.service
+cp "$APP_DIR/deploy/nexify-ytdlp-update.service" "$APP_DIR/deploy/nexify-ytdlp-update.timer" /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable --now spotihome-ytdlp-update.timer >/dev/null
-systemctl enable spotihome >/dev/null
-systemctl restart spotihome
+systemctl enable --now nexify-ytdlp-update.timer >/dev/null
+systemctl enable nexify >/dev/null
+systemctl restart nexify
 sleep 2
-systemctl --no-pager --lines=5 status spotihome || true
+systemctl --no-pager --lines=5 status nexify || true
 
 PUBLIC_URL="$(grep -E '^PUBLIC_URL=' "$APP_DIR/.env" | cut -d= -f2-)"
 cat <<EOF
 
-Spotihome tourne : ${PUBLIC_URL}
-  (certificat auto-signé : accepte l'avertissement du navigateur la première fois)
+Nexify tourne : ${PUBLIC_URL}
+  (certificat auto-signé : acceptez l'avertissement du navigateur la première fois)
 
-Pour Spotify : crée une appli sur https://developer.spotify.com/dashboard,
-ajoute l'URI de redirection ${PUBLIC_URL}/api/spotify/callback,
-puis renseigne SPOTIFY_CLIENT_ID et SPOTIFY_CLIENT_SECRET dans ${APP_DIR}/.env
-et lance : systemctl restart spotihome
+IMPORTANT : pour installer Nexify comme application (iOS, Android, Windows)
+et l'utiliser hors connexion, le navigateur exige un certificat HTTPS reconnu.
+Placez Nexify derrière un reverse proxy avec un vrai certificat (voir README).
+
+Pour Spotify : créez une appli sur https://developer.spotify.com/dashboard,
+ajoutez l'URI de redirection ${PUBLIC_URL}/api/spotify/callback,
+puis renseignez SPOTIFY_CLIENT_ID et SPOTIFY_CLIENT_SECRET dans ${APP_DIR}/.env
+et lancez : systemctl restart nexify
 EOF

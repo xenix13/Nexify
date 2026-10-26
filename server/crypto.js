@@ -5,7 +5,7 @@ export function makeCipher(secret) {
   if (!secret || secret.length < 16) {
     throw new Error('APP_SECRET doit faire au moins 16 caractères (voir .env.example)');
   }
-  const key = crypto.createHash('sha256').update(`spotihome:${secret}`).digest();
+  const key = crypto.createHash('sha256').update(`nexify:${secret}`).digest();
   return {
     encrypt(plain) {
       if (plain == null) return null;

@@ -9,7 +9,7 @@ loadDotEnv();
 const config = getConfig();
 
 if (!config.appSecret) {
-  console.error('APP_SECRET manquant : copie .env.example vers .env et renseigne-le (ou relance deploy/install.sh).');
+  console.error('APP_SECRET manquant : copiez .env.example vers .env et renseignez-le (ou relancez deploy/install.sh).');
   process.exit(1);
 }
 
@@ -20,7 +20,7 @@ const server = config.https
   : http.createServer(handler);
 
 server.listen(config.port, config.host, () => {
-  console.log(`Spotihome écoute sur ${config.https ? 'https' : 'http'}://${config.host}:${config.port}`);
+  console.log(`Nexify écoute sur ${config.https ? 'https' : 'http'}://${config.host}:${config.port}`);
   console.log(`URL publique : ${config.publicUrl}`);
   console.log(`Spotify : ${app.providers.spotify.configured ? `configuré (URI de redirection : ${config.publicUrl}/api/spotify/callback)` : 'non configuré'}`);
 });

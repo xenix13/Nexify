@@ -94,7 +94,7 @@ export class SpotifyProvider {
 
   async handleCallback({ code, state, error }) {
     const st = state && this.store.takeOAuthState(state);
-    if (!st || st.provider !== 'spotify') throw new HttpError(400, 'Lien de connexion Spotify expiré, recommence depuis les réglages.');
+    if (!st || st.provider !== 'spotify') throw new HttpError(400, 'Le lien de connexion Spotify a expiré. Recommencez depuis les paramètres.');
     if (error) throw new HttpError(400, `Connexion Spotify annulée (${error}).`);
     const user = this.store.user(st.userId);
     if (!user) throw new HttpError(400, 'Utilisateur introuvable');
@@ -129,7 +129,7 @@ export class SpotifyProvider {
     } catch (e) {
       if (e.status === 400) { // jeton révoqué : on délie pour que l'utilisateur reconnecte
         this.unlink(user);
-        throw new HttpError(409, 'La connexion Spotify a expiré, reconnecte ton compte.', { provider: 'spotify', code: 'not_linked' });
+        throw new HttpError(409, 'La connexion à Spotify a expiré. Reconnectez votre compte.', { provider: 'spotify', code: 'not_linked' });
       }
       throw e;
     }
@@ -167,12 +167,12 @@ export class SpotifyProvider {
       try { data = text ? JSON.parse(text) : null; } catch { data = null; }
       if (!r.ok) {
         const msg = data?.error?.message || text || `HTTP ${r.status}`;
-        if (r.status === 429) throw new HttpError(429, 'Spotify limite les requêtes, réessaie dans un instant.', { retryAfter: r.headers.get('retry-after') });
-        if (r.status === 404 && /device/i.test(msg)) throw new HttpError(404, 'Aucun appareil Spotify actif trouvé.', { provider: 'spotify', code: 'no_device' });
+        if (r.status === 429) throw new HttpError(429, 'Spotify limite temporairement les requêtes. Réessayez dans un instant.', { retryAfter: r.headers.get('retry-after') });
+        if (r.status === 404 && /device/i.test(msg)) throw new HttpError(404, 'Aucun appareil Spotify actif.', { provider: 'spotify', code: 'no_device' });
         if (r.status === 403 && path.includes('/playlists/')) {
-          throw new HttpError(403, 'Spotify ne donne accès qu’au contenu de tes propres playlists (ou collaboratives) en mode développement.', { provider: 'spotify' });
+          throw new HttpError(403, 'Spotify ne donne accès qu’au contenu de vos propres playlists (ou collaboratives) en mode développement.', { provider: 'spotify' });
         }
-        if (r.status === 403 && /premium/i.test(msg)) throw new HttpError(403, 'La lecture Spotify demande un compte Premium.', { provider: 'spotify', code: 'premium' });
+        if (r.status === 403 && /premium/i.test(msg)) throw new HttpError(403, 'La lecture avec Spotify nécessite un abonnement Premium.', { provider: 'spotify', code: 'premium' });
         throw new HttpError(r.status >= 500 ? 502 : r.status, `Spotify : ${msg}`, { provider: 'spotify' });
       }
       return data;
