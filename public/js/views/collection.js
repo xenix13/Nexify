@@ -49,7 +49,7 @@ export async function viewCollection(ctx, source, id) {
       collectionHead({
         image: col.image,
         kind: col.id === 'liked' || col.id === 'favorites' || col.id === 'LM' ? 'liked' : null,
-        kindLabel: `Playlist • ${SOURCE_NAMES[source]}`,
+        kindLabel: `${col.kind === 'album' ? 'Album' : col.kind === 'mix' ? 'Mix' : 'Playlist'} • ${SOURCE_NAMES[source]}`,
         source,
         title: col.name,
         meta: [col.owner, fmtTotal(col.tracks)].filter(Boolean).join(' • '),

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { makeCipher, hashPassword, verifyPassword } from '../server/crypto.js';
 import { normalize, bestMatch, scoreCandidate } from '../server/match.js';
-import { parseRadio, parseTracks, parsePlaylistHeader, parseLibraryPlaylists, continuationToken, parseYtmPlaylist, sapisidHash, bestThumb } from '../server/providers/ytmusic.js';
+import { parseHome, parseRadio, parseTracks, parsePlaylistHeader, parseLibraryPlaylists, continuationToken, parseYtmPlaylist, sapisidHash, bestThumb } from '../server/providers/ytmusic.js';
 import { mapDeezerTrack, parseDeezerProfile } from '../server/providers/deezer.js';
 import { mapSpotifyTrack } from '../server/providers/spotify.js';
 import { sanitizeTrack, parseDuration } from '../server/track.js';
@@ -204,4 +204,19 @@ test('base : reprise d’une installation Spotihome (playlists → données sync
   s.flush();
   assert.ok(fs.existsSync(path.join(dir, 'nexify.json')));
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('YouTube Music : accueil (filtres, sélection rapide, cartes, albums, artistes)', () => {
+  const home = parseHome(fx.ytmHomeResponse());
+  assert.deepEqual(home.chips.map((c) => c.title), ['Détente', 'Énergie', 'Pour la route']);
+  assert.equal(home.chips[1].params, 'P1');
+  const [quick, again, news] = home.shelves;
+  assert.equal(quick.layout, 'list');
+  assert.equal(quick.items[0].track.key, 'ytm:qqqqqqqqqq1');
+  assert.equal(again.strapline, '13170NICO');
+  assert.equal(again.layout, 'wide', 'vignettes 16:9 des vidéos');
+  assert.deepEqual(again.items[0].track.artists, ['Wudo Beatz']);
+  assert.deepEqual(again.items[1].track.artists, ['Lolywood'], 'sans le nombre de vues');
+  assert.equal(news.layout, 'cards');
+  assert.deepEqual(news.items.map((i) => `${i.type}:${i.id}`), ['playlist:RDTMAK5uy_mix', 'playlist:LM', 'album:MPREb_album01', 'artist:UCartist0001']);
 });

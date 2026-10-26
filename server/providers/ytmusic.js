@@ -146,6 +146,82 @@ export function parseRadio(json) {
   return out;
 }
 
+// ---------- accueil (FEmusic_home) : filtres d'ambiance et étagères ----------
+const navPageType = (nav) => nav?.browseEndpoint?.browseEndpointContextSupportedConfigs?.browseEndpointContextMusicConfig?.pageType || '';
+const COUNT_TEXT = /\b(vues|lectures|views|plays|abonnés|subscribers|titres|songs|tracks)\b/i;
+
+function largestThumb(thumbs) {
+  return Array.isArray(thumbs) && thumbs.length ? [...thumbs].sort((a, b) => (b.width || 0) - (a.width || 0))[0] : null;
+}
+
+export function parseTwoRowItem(r) {
+  if (!r) return null;
+  const title = runsText(r.title?.runs);
+  const subRuns = r.subtitle?.runs || [];
+  const subtitle = runsText(subRuns);
+  const thumbs = r.thumbnailRenderer?.musicThumbnailRenderer?.thumbnail?.thumbnails;
+  const big = largestThumb(thumbs);
+  const wide = Boolean(big?.width && big?.height && big.width / big.height > 1.3);
+  const image = bestThumb(thumbs, 544);
+  const nav = r.navigationEndpoint || {};
+  const base = { title, subtitle, image, wide };
+  if (nav.watchEndpoint?.videoId) {
+    const videoId = nav.watchEndpoint.videoId;
+    let artists = subRuns.filter((x) => pageType(x) === 'MUSIC_PAGE_TYPE_ARTIST' || pageType(x) === 'MUSIC_PAGE_TYPE_USER_CHANNEL').map((x) => x.text);
+    if (!artists.length) {
+      const c = subRuns.map((x) => x.text.trim()).filter((t) => t && t !== '•' && !TYPE_LABELS.has(t) && !COUNT_TEXT.test(t));
+      if (c[0]) artists = [c[0]];
+    }
+    const album = subRuns.find((x) => pageType(x) === 'MUSIC_PAGE_TYPE_ALBUM')?.text || '';
+    return {
+      ...base,
+      type: 'song',
+      track: makeTrack({ source: 'ytm', sourceId: videoId, title, artists: [...new Set(artists)], album, duration: 0, artwork: image, uri: `${ORIGIN}/watch?v=${videoId}` }),
+    };
+  }
+  if (nav.watchPlaylistEndpoint?.playlistId) return { ...base, type: 'playlist', id: nav.watchPlaylistEndpoint.playlistId };
+  const bid = nav.browseEndpoint?.browseId || '';
+  const pt = navPageType(nav);
+  if (!bid) return null;
+  if (pt === 'MUSIC_PAGE_TYPE_ALBUM' || bid.startsWith('MPRE')) return { ...base, type: 'album', id: bid };
+  if (pt === 'MUSIC_PAGE_TYPE_PLAYLIST' || bid.startsWith('VL')) return { ...base, type: 'playlist', id: bid.replace(/^VL/, '') };
+  if (pt === 'MUSIC_PAGE_TYPE_ARTIST' || bid.startsWith('UC')) return { ...base, type: 'artist', id: bid };
+  return null;
+}
+
+export function parseHome(json) {
+  const chips = collect(json, 'chipCloudChipRenderer').map((c) => ({
+    title: runsText(c.text?.runs),
+    params: c.navigationEndpoint?.browseEndpoint?.params || '',
+    selected: Boolean(c.isSelected),
+  })).filter((c) => c.title && c.params);
+  const shelves = [];
+  for (const sh of collect(json, 'musicCarouselShelfRenderer')) {
+    const head = sh.header?.musicCarouselShelfBasicHeaderRenderer || {};
+    const title = runsText(head.title?.runs);
+    const items = [];
+    for (const it of sh.contents || []) {
+      if (it.musicResponsiveListItemRenderer) {
+        const t = parseListItem(it.musicResponsiveListItemRenderer);
+        if (t) items.push({ type: 'song', title: t.title, subtitle: t.artists.join(', '), image: t.artwork, wide: false, track: t, row: true });
+      } else if (it.musicTwoRowItemRenderer) {
+        const x = parseTwoRowItem(it.musicTwoRowItemRenderer);
+        if (x) items.push(x);
+      }
+    }
+    if (!title || !items.length) continue;
+    const rows = items.filter((i) => i.row).length;
+    shelves.push({
+      title,
+      strapline: runsText(head.strapline?.runs),
+      thumb: bestThumb(head.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails, 88),
+      layout: rows > items.length / 2 ? 'list' : items.filter((i) => i.wide).length > items.length / 2 ? 'wide' : 'cards',
+      items,
+    });
+  }
+  return { chips, shelves };
+}
+
 export function continuationToken(json) {
   return first(json, 'continuationCommand')?.token || first(json, 'nextContinuationData')?.continuation || null;
 }
@@ -267,6 +343,8 @@ export class YtMusicProvider {
     const pid = parseYtmPlaylist(id);
     if (!pid) throw new HttpError(400, 'Identifiant de playlist YouTube Music invalide');
     if (pid === 'LM' && !this.linked(user)) throw new HttpError(409, 'YouTube Music non lié', { provider: 'ytm', code: 'not_linked' });
+    if (pid.startsWith('MPRE')) return this.album(user, pid);
+    if (pid.startsWith('RD')) return this.mix(user, pid);
     const json = await this._call('browse', { browseId: `VL${pid}` }, user);
     const header = parsePlaylistHeader(json);
     const tracks = parseTracks(json);
@@ -281,6 +359,43 @@ export class YtMusicProvider {
       token = next;
     }
     return { source: 'ytm', id: pid, name: pid === 'LM' ? 'Titres « J’aime » (YouTube Music)' : header.name, image: header.image, owner: header.owner, tracks };
+  }
+
+  // album : les lignes n'ont ni pochette ni artiste, on les reprend de l'en-tête
+  async album(user, browseId) {
+    const json = await this._call('browse', { browseId }, user);
+    const header = parsePlaylistHeader(json);
+    const artist = header.owner.split('•')[0].trim();
+    const tracks = parseTracks(json).map((t) => makeTrack({
+      ...t,
+      artists: t.artists.length ? t.artists : [artist].filter(Boolean),
+      album: t.album || header.name,
+      artwork: t.artwork || header.image,
+    }));
+    return { source: 'ytm', id: browseId, kind: 'album', name: header.name, image: header.image, owner: artist, tracks };
+  }
+
+  // mix personnalisé (identifiant RD…) : lu comme une file « radio »
+  async mix(user, playlistId) {
+    const json = await this._call('next', { playlistId, isAudioOnly: true, enablePersistentPlaylistPanel: true }, user);
+    const panel = first(json, 'playlistPanelRenderer');
+    return { source: 'ytm', id: playlistId, kind: 'mix', name: (typeof panel?.title === 'string' ? panel.title : runsText(panel?.title?.runs)) || 'Mix', image: parseRadio(json)[0]?.artwork || '', owner: 'YouTube Music', tracks: parseRadio(json) };
+  }
+
+  // accueil YouTube Music (personnalisé si le compte est connecté), avec 2 suites
+  async home(user, params = '') {
+    const json = await this._call('browse', { browseId: 'FEmusic_home', ...(params ? { params } : {}) }, user);
+    const out = parseHome(json);
+    let token = continuationToken(json);
+    for (let i = 0; token && i < 2; i++) {
+      const more = await this._call('browse', { continuation: token }, user).catch(() => null);
+      if (!more) break;
+      out.shelves.push(...parseHome(more).shelves);
+      const next = continuationToken(more);
+      if (next === token) break;
+      token = next;
+    }
+    return out;
   }
 
   // radio YouTube Music (mix automatique) à partir d'un titre

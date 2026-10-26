@@ -155,18 +155,25 @@ export function addToPlaylist(tracks) {
 // item : { title, sub, image, kind ('liked'|'downloads'), href, onPlay, round }
 export function card(item) {
   const art = item.kind === 'liked' || item.kind === 'downloads' ? specialArt(item.kind) : artwork(item.image);
-  return h(`div.card${item.round ? '.round' : ''}`, {},
-    h('a.card-art', { href: item.href, 'aria-label': item.title }, art),
-    item.onPlay ? h('button.card-play', { type: 'button', 'aria-label': `Lire ${item.title}`, onClick: (e) => { e.preventDefault(); item.onPlay(); } }, icon('play')) : null,
-    h('a.card-title', { href: item.href }, item.title),
-    item.sub ? h('span.card-sub', {}, item.sub) : null);
+  const open = item.href
+    ? (cls, child) => h(`a.${cls}`, { href: item.href, 'aria-label': cls === 'card-art' ? item.title : null }, child)
+    : (cls, child) => h(`button.${cls}.card-btn`, { type: 'button', 'aria-label': cls === 'card-art' ? `Lire ${item.title}` : null, onClick: () => item.onPlay?.() }, child);
+  return h(`div.card${item.round ? '.round' : ''}${item.wide ? '.wide' : ''}`, {
+    onContextmenu: item.track ? (e) => { e.preventDefault(); trackMenu(e.currentTarget, item.track, 0); } : null,
+  },
+  h('div.card-media', {},
+    open('card-art', art),
+    item.onPlay ? h('button.card-play', { type: 'button', 'aria-label': `Lire ${item.title}`, onClick: (e) => { e.preventDefault(); item.onPlay(); } }, icon('play')) : null),
+  open('card-title', item.title),
+  item.sub ? h('span.card-sub', {}, item.sub) : null);
 }
 
-export function shelf(title, content, { kicker, more } = {}) {
+export function shelf(title, content, { kicker, more, thumb } = {}) {
   const row = content;
   const scroll = (dir) => row.scrollBy({ left: dir * row.clientWidth * 0.8, behavior: 'smooth' });
   return h('section.shelf', {},
     h('header.shelf-head', {},
+      thumb ? artwork(thumb, 'shelf-thumb') : null,
       h('div', {}, kicker ? h('span.kicker', {}, kicker) : null, h('h2.section-title', {}, title)),
       h('div.shelf-nav', {},
         more ? h('a.btn.ghost', { href: more.href }, more.label) : null,
@@ -175,7 +182,7 @@ export function shelf(title, content, { kicker, more } = {}) {
     row);
 }
 
-export const cardRow = (items) => h('div.shelf-row', {}, items.map(card));
+export const cardRow = (items, wide = false) => h(`div.shelf-row${wide ? '.wide' : ''}`, {}, items.map(card));
 
 // ---------- en-tête de collection (playlist, J'aime, téléchargements)
 export function collectionHead({ image, kind, kindLabel, source, title, meta, actions, note }) {

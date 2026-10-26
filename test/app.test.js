@@ -53,6 +53,9 @@ async function fakeFetch(input, opts = {}) {
       if (/Voyager/i.test(body.query)) return json(fx.ytmSearchResponse([{ videoId: 'zzzzzzzzzzz', title: 'Something Else', artist: 'Nobody', album: 'N', duration: '1:00' }]));
       return json(fx.ytmSearchResponse([{ videoId: 'abcdefghijk', title: 'Get Lucky', artist: 'Daft Punk', album: 'RAM', duration: '6:09' }]));
     }
+    if (url.pathname.endsWith('/next') && body.playlistId === 'RDTMAK5uy_mix') {
+      return json({ ...fx.ytmRadioResponse([{ videoId: 'mmmmmmmmmm1', title: 'Dans le mix', artist: 'ISK', album: 'A', duration: '3:00' }]), playlistPanelRendererTitle: 1 });
+    }
     if (url.pathname.endsWith('/next')) {
       return json(fx.ytmRadioResponse([
         { videoId: body.videoId, title: 'Seed', artist: 'Daft Punk', album: 'RAM', duration: '6:09' },
@@ -66,6 +69,9 @@ async function fakeFetch(input, opts = {}) {
       if (body.browseId === 'VLPLytm0000001') {
         return json(fx.ytmPlaylistResponse({ title: 'Route', items: [{ videoId: 'aaaaaaaaaaa', title: 'Un', artist: 'A', album: 'X', duration: '3:00' }], continuation: 'C1' }));
       }
+      if (body.browseId === 'FEmusic_home') return json(fx.ytmHomeResponse());
+      if (body.continuation === 'HOME2') return json(fx.ytmHomeContinuation());
+      if (body.browseId === 'MPREb_album01') return json(fx.ytmAlbumResponse());
       if (body.continuation === 'C1') return json(fx.ytmContinuation([{ videoId: 'bbbbbbbbbbb', title: 'Deux', artist: 'B', album: 'Y', duration: '2:00' }]));
     }
   }
@@ -345,6 +351,23 @@ test('radio : titres similaires à partir d’un titre YouTube Music ou Deezer',
   assert.equal(r.status, 200);
   const next = calls.filter((c) => c.path.endsWith('/next')).pop();
   assert.equal(JSON.parse(next.body).videoId, 'FGBhQbmPwH8', 'via la correspondance YouTube Music');
+});
+
+test('accueil YouTube Music, album et mix personnalisé', async () => {
+  let r = await admin('GET', '/api/home');
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.data.shelves.map((s) => s.title), ['Sélection rapide', 'Réécouter', 'Nouveautés et classiques', 'Favoris à redécouvrir']);
+  assert.equal(r.data.chips.length, 3);
+  const n = calls.filter((c) => c.path.endsWith('/browse')).length;
+  await admin('GET', '/api/home');
+  assert.equal(calls.filter((c) => c.path.endsWith('/browse')).length, n, 'gardé en cache');
+  r = await admin('GET', '/api/collection/ytm/MPREb_album01');
+  assert.equal(r.data.collection.kind, 'album');
+  assert.equal(r.data.collection.tracks[0].title, 'Catalogue');
+  assert.deepEqual(r.data.collection.tracks[0].artists, ['La Fouine'], 'artiste repris de l’en-tête');
+  assert.match(r.data.collection.tracks[0].artwork, /alb=/);
+  r = await admin('GET', '/api/collection/ytm/RDTMAK5uy_mix');
+  assert.equal(r.data.collection.tracks[0].title, 'Dans le mix');
 });
 
 test('service worker : liste des fichiers et empreinte de version', async () => {

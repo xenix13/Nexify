@@ -299,7 +299,7 @@ input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.25); }
   overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; padding-bottom: 4px;
 }
 .shelf-row::-webkit-scrollbar { display: none; }
-.card { scroll-snap-align: start; min-width: 0; display: grid; gap: 8px; position: relative; }
+.card { scroll-snap-align: start; min-width: 0; display: grid; gap: 0; position: relative; }
 .card-art { position: relative; aspect-ratio: 1; border-radius: var(--r-sm); overflow: hidden; background: var(--surface-2); }
 .card-art .art { width: 100%; height: 100%; border-radius: 0; }
 .card-art::after { content: ""; position: absolute; inset: 0; background: linear-gradient(transparent 50%, rgba(0,0,0,.55)); opacity: 0; transition: opacity .2s; }
@@ -310,9 +310,18 @@ input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.25); }
   transition: opacity .2s, transform .2s; box-shadow: 0 6px 16px rgba(0,0,0,.45);
 }
 .card:hover .card-play, .card:focus-within .card-play { opacity: 1; transform: none; }
-.card-title { font-weight: 500; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.card-sub { color: var(--text-2); font-size: 14px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-top: -4px; }
+.card-title { font-weight: 500; line-height: 1.35; margin-top: 10px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.card-sub { color: var(--text-2); font-size: 14px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-top: 2px; }
 .card.round .card-art { border-radius: 50%; }
+.card-btn { border: 0; padding: 0; background: none; text-align: left; font: inherit; line-height: inherit; color: inherit; cursor: pointer; }
+.card-media { position: relative; }
+.card { align-content: start; }
+button.card-art { display: block; width: 100%; }
+.shelf-row.wide { grid-auto-columns: 300px; }
+.card.wide .card-art { aspect-ratio: 16 / 9; }
+.shelf-thumb { width: 44px !important; height: 44px !important; border-radius: 50% !important; align-self: center; }
+.mood-chips { padding-top: 0; margin-bottom: 8px; }
+.shelf.skeleton .shelf-row > div { aspect-ratio: 1; border-radius: var(--r-sm); background: var(--surface-2); animation: pulse 1.4s ease-in-out infinite; }
 
 .quick {
   display: grid; grid-auto-flow: column; grid-template-rows: repeat(4, auto); grid-auto-columns: minmax(280px, 380px);
@@ -569,6 +578,8 @@ code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px;
   .page-title { font-size: 26px; }
   .section-title { font-size: 20px; }
   .shelf-row { grid-auto-columns: 144px; gap: 14px; }
+  .shelf-row.wide { grid-auto-columns: 240px; }
+  .shelf-thumb { width: 36px !important; height: 36px !important; }
   .shelf-nav { display: none; }
   .quick { grid-auto-columns: 86%; }
   .grid-cards { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 20px 14px; }

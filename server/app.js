@@ -395,6 +395,20 @@ export function createApp(config, deps = {}) {
     return { plan: await playbackPlan(u, track, { prefer: body.prefer, download: Boolean(body.download) }) };
   });
 
+  // accueil YouTube Music (étagères et filtres d'ambiance), gardé 10 min par utilisateur
+  const homeCache = new Map();
+  r.get('/api/home', async (req, res, _p, url) => {
+    const u = requireUser(req);
+    const params = (url.searchParams.get('params') || '').slice(0, 500);
+    const key = `${u.id}:${params}`;
+    const hit = homeCache.get(key);
+    if (hit && hit.at > Date.now() - 10 * 60_000 && url.searchParams.get('refresh') !== '1') return hit.data;
+    const data = { ...(await ytm.home(u, params)), params, personalized: ytm.linked(u), at: Date.now() };
+    homeCache.set(key, { at: Date.now(), data });
+    if (homeCache.size > 200) homeCache.delete(homeCache.keys().next().value);
+    return data;
+  });
+
   // titres similaires (radio YouTube Music) à partir de n'importe quel titre
   r.post('/api/radio', async (req) => {
     requireUser(req);

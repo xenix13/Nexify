@@ -113,3 +113,66 @@ export function ytmRadioResponse(items) {
     } } } } } }] } } } },
   };
 }
+
+// Accueil YouTube Music (FEmusic_home) : filtres d'ambiance, sélection rapide, cartes, suite
+const twoRow = ({ title, subtitle, nav, thumb = { url: 'https://lh3.googleusercontent.com/c=w226-h226', width: 226, height: 226 } }) => ({
+  musicTwoRowItemRenderer: {
+    title: { runs: [{ text: title }] },
+    subtitle: { runs: subtitle },
+    navigationEndpoint: nav,
+    thumbnailRenderer: { musicThumbnailRenderer: { thumbnail: { thumbnails: [thumb] } } },
+  },
+});
+const browseNav = (browseId, pageType) => ({ browseEndpoint: { browseId, browseEndpointContextSupportedConfigs: { browseEndpointContextMusicConfig: { pageType } } } });
+const carousel = (title, contents, strapline) => ({
+  musicCarouselShelfRenderer: {
+    header: { musicCarouselShelfBasicHeaderRenderer: { title: { runs: [{ text: title }] }, ...(strapline ? { strapline: { runs: [{ text: strapline }] } } : {}) } },
+    contents,
+  },
+});
+
+export function ytmHomeResponse() {
+  return {
+    contents: { singleColumnBrowseResultsRenderer: { tabs: [{ tabRenderer: { content: { sectionListRenderer: {
+      header: { chipCloudRenderer: { chips: ['Détente', 'Énergie', 'Pour la route'].map((t, i) => ({ chipCloudChipRenderer: { text: { runs: [{ text: t }] }, navigationEndpoint: { browseEndpoint: { browseId: 'FEmusic_home', params: `P${i}` } } } })) } },
+      contents: [
+        carousel('Sélection rapide', [
+          ytmSong({ videoId: 'qqqqqqqqqq1', title: 'Namlunun Ucunda', artist: 'YK PRODUCTION', album: 'Namlunun Ucunda', duration: '2:58' }),
+          ytmSong({ videoId: 'qqqqqqqqqq2', title: 'AÉROPORT', artist: 'Doz', album: 'DEUXIÈME DOSE', duration: '3:10' }),
+        ]),
+        carousel('Réécouter', [
+          twoRow({ title: 'What’s luv', subtitle: [{ text: 'Titre' }, { text: ' • ' }, artistRun('Wudo Beatz')], nav: { watchEndpoint: { videoId: 'wwwwwwwwww1' } }, thumb: { url: 'https://i.ytimg.com/vi/wwwwwwwwww1/hqdefault.jpg', width: 480, height: 270 } }),
+          twoRow({ title: 'Chargés comme jamais', subtitle: [{ text: 'Lolywood' }, { text: ' • ' }, { text: '10 M de vues' }], nav: { watchEndpoint: { videoId: 'wwwwwwwwww2' } }, thumb: { url: 'https://i.ytimg.com/vi/wwwwwwwwww2/hqdefault.jpg', width: 480, height: 270 } }),
+        ], '13170NICO'),
+        carousel('Nouveautés et classiques', [
+          twoRow({ title: 'Mix découvertes', subtitle: [{ text: 'ISK, Crankdat' }], nav: browseNav('VLRDTMAK5uy_mix', 'MUSIC_PAGE_TYPE_PLAYLIST') }),
+          twoRow({ title: 'Musique "J’aime"', subtitle: [{ text: 'Playlist automatique' }], nav: browseNav('VLLM', 'MUSIC_PAGE_TYPE_PLAYLIST') }),
+          twoRow({ title: 'Silence Radio', subtitle: [{ text: 'Album' }, { text: ' • ' }, artistRun('La Fouine')], nav: browseNav('MPREb_album01', 'MUSIC_PAGE_TYPE_ALBUM') }),
+          twoRow({ title: 'Paloma', subtitle: [{ text: 'Artiste' }], nav: browseNav('UCartist0001', 'MUSIC_PAGE_TYPE_ARTIST') }),
+        ]),
+      ],
+      continuations: [{ nextContinuationData: { continuation: 'HOME2' } }],
+    } } } }] } },
+  };
+}
+
+export function ytmHomeContinuation() {
+  return { continuationContents: { sectionListContinuation: { contents: [
+    carousel('Favoris à redécouvrir', [twoRow({ title: 'View from the top', subtitle: [{ text: 'Titre' }, { text: ' • ' }, artistRun('Kairo')], nav: { watchEndpoint: { videoId: 'ffffffffff1' } } })]),
+  ] } } };
+}
+
+export function ytmAlbumResponse() {
+  return {
+    contents: { twoColumnBrowseResultsRenderer: {
+      tabs: [{ tabRenderer: { content: { sectionListRenderer: { contents: [{ musicResponsiveHeaderRenderer: {
+        title: { runs: [{ text: 'Silence Radio' }] },
+        straplineTextOne: { runs: [{ text: 'La Fouine' }] },
+        thumbnail: { musicThumbnailRenderer: { thumbnail: { thumbnails: [{ url: 'https://lh3.googleusercontent.com/alb=w544-h544', width: 544 }] } } },
+      } }] } } } }],
+      secondaryContents: { sectionListRenderer: { contents: [{ musicShelfRenderer: { contents: [
+        { musicResponsiveListItemRenderer: { flexColumns: [flex([{ text: 'Catalogue', navigationEndpoint: { watchEndpoint: { videoId: 'albumtrack1' } } }])], fixedColumns: [{ musicResponsiveListItemFixedColumnRenderer: { text: { runs: [{ text: '3:21' }] } } }], playlistItemData: { videoId: 'albumtrack1' } } },
+      ] } }] } },
+    } },
+  };
+}

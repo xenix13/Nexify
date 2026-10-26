@@ -1,6 +1,7 @@
 // Accueil : étagères construites à partir des données gardées sur l'appareil.
 import { h, icon, plural, SOURCE_NAMES, toast } from '../ui.js';
-import { net } from '../api.js';
+import { net, get, store } from '../api.js';
+import { db } from '../db.js';
 import { data } from '../data.js';
 import { downloads } from '../downloads.js';
 import { player } from '../player.js';
@@ -32,7 +33,70 @@ export async function playCollection(item) {
   }
 }
 
+// ---------- fil d'accueil YouTube Music (gardé sur l'appareil pour le mode hors ligne)
+function feedCard(item, shelfTitle) {
+  if (item.type === 'song') return { title: item.title, sub: item.subtitle, image: item.image, wide: item.wide, track: item.track, onPlay: () => player.startRadio(item.track) };
+  if (item.type === 'artist') return { title: item.title, sub: item.subtitle || 'Artiste', image: item.image, round: true, href: `#/search?q=${encodeURIComponent(item.title)}` };
+  return {
+    title: item.title,
+    sub: item.subtitle,
+    image: item.image,
+    wide: item.wide,
+    href: `#/c/ytm/${encodeURIComponent(item.id)}`,
+    onPlay: () => playCollection({ source: 'ytm', id: item.id, name: item.title, image: item.image, from: shelfTitle }),
+  };
+}
+
+function feedShelves(feed) {
+  return feed.shelves.map((sh) => {
+    const opts = { kicker: sh.strapline || null, thumb: sh.strapline ? sh.thumb : null };
+    if (sh.layout === 'list') {
+      const tracks = sh.items.map((i) => i.track);
+      const list = trackList(tracks, { label: sh.title, context: { kind: 'mix', name: sh.title } });
+      list.classList.add('quick');
+      return shelf(sh.title, list, opts);
+    }
+    return shelf(sh.title, cardRow(sh.items.map((i) => feedCard(i, sh.title)), sh.layout === 'wide'), opts);
+  });
+}
+
 export function viewHome(ctx) {
+  let mood = store.get('homeMood', '');
+  let feed = null;
+  let feedLoading = false;
+  let feedError = '';
+
+  async function loadFeed(refresh = false) {
+    const key = `home:${mood}`;
+    const cached = await db.get('kv', key).catch(() => null);
+    if (!ctx.alive()) return;
+    if (cached) { feed = cached; draw(); }
+    if (!net.online || (cached && !refresh && Date.now() - cached.at < 15 * 60_000)) return;
+    feedLoading = !cached;
+    feedError = '';
+    if (!cached) draw();
+    try {
+      const fresh = await get(`/api/home?params=${encodeURIComponent(mood)}`, { timeout: 45_000 });
+      await db.put('kv', fresh, key).catch(() => {});
+      if (!ctx.alive() || key !== `home:${mood}`) return;
+      feed = fresh;
+    } catch (e) {
+      feedError = e.message;
+    }
+    feedLoading = false;
+    if (ctx.alive()) draw();
+  }
+
+  const moodChips = () => {
+    const chips = feed?.chips || [];
+    if (!chips.length) return null;
+    return h('div.chips.mood-chips', { role: 'group', 'aria-label': 'Ambiances' }, chips.map((c) => h('button.chip', {
+      type: 'button',
+      'aria-pressed': String(mood === c.params),
+      onClick: () => { mood = mood === c.params ? '' : c.params; store.set('homeMood', mood); loadFeed(); },
+    }, c.title)));
+  };
+
   const draw = () => {
     if (!ctx.alive()) return;
     const top = data.topTracks(20);
@@ -43,7 +107,14 @@ export function viewHome(ctx) {
     const hist = data.recentTracks(16);
     const blocks = [];
 
-    blocks.push(h('h1.page-title', {}, `${greeting()}${data.user ? `, ${data.user.username}` : ''}`));
+    const hasFeed = Boolean(feed?.shelves?.length);
+    if (hasFeed || feedLoading) {
+      blocks.push(h('h1.visually-hidden', {}, 'Accueil'));
+      // les filtres restent ceux de l'accueil général pour pouvoir revenir en arrière
+      blocks.push(moodChips() || '');
+    } else {
+      blocks.push(h('h1.page-title', {}, `${greeting()}${data.user ? `, ${data.user.username}` : ''}`));
+    }
 
     if (!net.online) {
       blocks.push(h('div.notice', {}, icon('offline'), h('p', {}, dls.length
@@ -52,7 +123,13 @@ export function viewHome(ctx) {
       dls.length ? h('a.btn', { href: '#/library/downloads' }, 'Mes téléchargements') : null));
     }
 
-    if (!top.length && !pls.length && !liked.length) {
+    if (feedLoading) {
+      blocks.push(h('section.shelf.skeleton', {}, h('header.shelf-head', {}, h('h2.section-title', {}, 'Chargement de votre accueil…')), h('div.shelf-row', {}, Array.from({ length: 6 }, () => h('div')))));
+    }
+    if (hasFeed) blocks.push(...feedShelves(feed));
+    if (feedError && !hasFeed && net.online) blocks.push(h('div.notice', {}, h('p', {}, `Accueil YouTube Music indisponible : ${feedError}`), h('button.btn', { type: 'button', onClick: () => loadFeed(true) }, 'Réessayer')));
+
+    if (!hasFeed && !feedLoading && !top.length && !pls.length && !liked.length) {
       blocks.push(h('section.hero', {},
         h('h1', {}, 'Toute votre musique, ', h('span.grad-text', {}, 'au même endroit'), '.'),
         h('p', {}, 'Recherchez parmi YouTube Music, Spotify et Deezer, créez vos playlists et téléchargez vos titres pour les écouter partout, même sans connexion.'),
@@ -61,7 +138,7 @@ export function viewHome(ctx) {
           h('a.btn.lg', { href: '#/settings/services' }, 'Connecter mes services'))));
     }
 
-    if (top.length >= 4) {
+    if (!hasFeed && top.length >= 4) {
       const quick = trackList(top, { label: 'Sélection rapide', context: { kind: 'mix', name: 'Sélection rapide' } });
       quick.classList.add('quick');
       blocks.push(shelf('Sélection rapide', quick, { kicker: 'D’après vos écoutes' }));
@@ -114,8 +191,9 @@ export function viewHome(ctx) {
     ctx.view.replaceChildren(h('div.page', {}, blocks));
   };
   draw();
+  loadFeed();
   ctx.on(data, 'library', draw);
-  ctx.on(net, 'change', draw);
+  ctx.on(net, 'change', () => { draw(); if (net.online) loadFeed(); });
   if (net.online && (!data.library || Date.now() - data.library.at > 10 * 60_000)) data.refreshLibrary().catch(() => {});
 }
 
