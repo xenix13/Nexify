@@ -400,10 +400,11 @@ export function createApp(config, deps = {}) {
   r.get('/api/home', async (req, res, _p, url) => {
     const u = requireUser(req);
     const params = (url.searchParams.get('params') || '').slice(0, 500);
-    const key = `${u.id}:${params}`;
+    const browseId = url.searchParams.get('browseId') || 'FEmusic_home';
+    const key = `${u.id}:${browseId}:${params}`;
     const hit = homeCache.get(key);
     if (hit && hit.at > Date.now() - 10 * 60_000 && url.searchParams.get('refresh') !== '1') return hit.data;
-    const data = { ...(await ytm.home(u, params)), params, personalized: ytm.linked(u), at: Date.now() };
+    const data = { ...(await ytm.home(u, params, browseId)), params, browseId, personalized: ytm.linked(u), at: Date.now() };
     homeCache.set(key, { at: Date.now(), data });
     if (homeCache.size > 200) homeCache.delete(homeCache.keys().next().value);
     return data;

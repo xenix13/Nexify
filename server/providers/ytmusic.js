@@ -193,8 +193,9 @@ export function parseHome(json) {
   const chips = collect(json, 'chipCloudChipRenderer').map((c) => ({
     title: runsText(c.text?.runs),
     params: c.navigationEndpoint?.browseEndpoint?.params || '',
+    browseId: c.navigationEndpoint?.browseEndpoint?.browseId || 'FEmusic_home',
     selected: Boolean(c.isSelected),
-  })).filter((c) => c.title && c.params);
+  })).filter((c) => c.title && (c.params || c.browseId !== 'FEmusic_home') && /^FEmusic_\w+$/.test(c.browseId));
   const shelves = [];
   for (const sh of collect(json, 'musicCarouselShelfRenderer')) {
     const head = sh.header?.musicCarouselShelfBasicHeaderRenderer || {};
@@ -383,8 +384,9 @@ export class YtMusicProvider {
   }
 
   // accueil YouTube Music (personnalisé si le compte est connecté), avec 2 suites
-  async home(user, params = '') {
-    const json = await this._call('browse', { browseId: 'FEmusic_home', ...(params ? { params } : {}) }, user);
+  async home(user, params = '', browseId = 'FEmusic_home') {
+    if (!/^FEmusic_\w+$/.test(browseId)) throw new HttpError(400, 'Rubrique inconnue');
+    const json = await this._call('browse', { browseId, ...(params ? { params } : {}) }, user);
     const out = parseHome(json);
     let token = continuationToken(json);
     for (let i = 0; token && i < 2; i++) {

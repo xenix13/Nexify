@@ -358,6 +358,11 @@ test('accueil YouTube Music, album et mix personnalisé', async () => {
   assert.equal(r.status, 200);
   assert.deepEqual(r.data.shelves.map((s) => s.title), ['Sélection rapide', 'Réécouter', 'Nouveautés et classiques', 'Favoris à redécouvrir']);
   assert.equal(r.data.chips.length, 3);
+  r = await admin('GET', '/api/home?browseId=FEmusic_home&params=P1');
+  assert.equal(r.status, 200);
+  assert.equal(JSON.parse(calls.filter((c) => c.path.endsWith('/browse')).find((c) => JSON.parse(c.body).params === 'P1').body).browseId, 'FEmusic_home');
+  r = await admin('GET', '/api/home?browseId=VLautre');
+  assert.equal(r.status, 400, 'seules les rubriques FEmusic_ sont acceptées');
   const n = calls.filter((c) => c.path.endsWith('/browse')).length;
   await admin('GET', '/api/home');
   assert.equal(calls.filter((c) => c.path.endsWith('/browse')).length, n, 'gardé en cache');

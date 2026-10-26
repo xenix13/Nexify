@@ -398,8 +398,6 @@ button.card-art { display: block; width: 100%; }
 .lib-section { margin-bottom: 36px; }
 .lib-section .section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
 .lib-section .section-head h2 { display: flex; align-items: center; gap: 10px; font-size: 20px; margin: 0; }
-.storage-bar { height: 6px; border-radius: 3px; background: var(--surface-3); overflow: hidden; margin: 8px 0; }
-.storage-bar i { display: block; height: 100%; background: var(--grad); }
 
 /* ---------- réglages ---------- */
 .settings { max-width: 880px; }

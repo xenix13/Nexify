@@ -61,40 +61,65 @@ function feedShelves(feed) {
 }
 
 export function viewHome(ctx) {
-  let mood = store.get('homeMood', '');
+  // filtre d'ambiance choisi : { title, params, browseId } ou null (accueil général)
+  let mood = store.get('homeMood', null);
+  if (!mood || typeof mood !== 'object') mood = null;
   let feed = null;
+  let baseChips = []; // filtres de l'accueil général, toujours affichés pour pouvoir changer ou revenir
   let feedLoading = false;
   let feedError = '';
+  const feedKey = (m) => `home:${m ? `${m.browseId}:${m.params}` : 'FEmusic_home:'}`;
+  const feedUrl = (m) => `/api/home?browseId=${encodeURIComponent(m?.browseId || 'FEmusic_home')}&params=${encodeURIComponent(m?.params || '')}`;
+
+  async function fetchFeed(m, refresh) {
+    const key = feedKey(m);
+    const cached = await db.get('kv', key).catch(() => null);
+    if (cached && (!net.online || (!refresh && Date.now() - cached.at < 15 * 60_000))) return { data: cached, fresh: false };
+    if (!net.online) return { data: null, fresh: false };
+    try {
+      const data = await get(feedUrl(m), { timeout: 45_000 });
+      await db.put('kv', data, key).catch(() => {});
+      return { data, fresh: true };
+    } catch (e) {
+      if (cached) return { data: cached, fresh: false };
+      throw e;
+    }
+  }
 
   async function loadFeed(refresh = false) {
-    const key = `home:${mood}`;
+    const m = mood;
+    const key = feedKey(m);
     const cached = await db.get('kv', key).catch(() => null);
-    if (!ctx.alive()) return;
-    if (cached) { feed = cached; draw(); }
-    if (!net.online || (cached && !refresh && Date.now() - cached.at < 15 * 60_000)) return;
-    feedLoading = !cached;
+    if (!ctx.alive() || feedKey(mood) !== key) return;
+    feed = cached;
     feedError = '';
-    if (!cached) draw();
+    feedLoading = !cached && net.online;
+    draw();
+    // filtres de l'accueil général (pour pouvoir changer de filtre ou revenir)
+    if (m) fetchFeed(null, false).then(({ data }) => { if (data?.chips?.length && ctx.alive()) { baseChips = data.chips; draw(); } }).catch(() => {});
     try {
-      const fresh = await get(`/api/home?params=${encodeURIComponent(mood)}`, { timeout: 45_000 });
-      await db.put('kv', fresh, key).catch(() => {});
-      if (!ctx.alive() || key !== `home:${mood}`) return;
-      feed = fresh;
+      const { data } = await fetchFeed(m, refresh);
+      if (!ctx.alive() || feedKey(mood) !== key) return;
+      if (data) feed = data;
+      if (!m && data?.chips?.length) baseChips = data.chips;
     } catch (e) {
-      feedError = e.message;
+      if (feedKey(mood) === key) feedError = e.message;
     }
     feedLoading = false;
-    if (ctx.alive()) draw();
+    if (ctx.alive() && feedKey(mood) === key) draw();
   }
 
   const moodChips = () => {
-    const chips = feed?.chips || [];
-    if (!chips.length) return null;
-    return h('div.chips.mood-chips', { role: 'group', 'aria-label': 'Ambiances' }, chips.map((c) => h('button.chip', {
-      type: 'button',
-      'aria-pressed': String(mood === c.params),
-      onClick: () => { mood = mood === c.params ? '' : c.params; store.set('homeMood', mood); loadFeed(); },
-    }, c.title)));
+    const chips = baseChips.length ? baseChips : (!mood ? feed?.chips || [] : []);
+    if (!chips.length && !mood) return null;
+    const select = (m) => { mood = m; store.set('homeMood', m); ctx.view.scrollTop = 0; loadFeed(); };
+    return h('div.chips.mood-chips', { role: 'group', 'aria-label': 'Ambiances' },
+      h('button.chip', { type: 'button', 'aria-pressed': String(!mood), onClick: () => { if (mood) select(null); } }, 'Tout'),
+      chips.map((c) => h('button.chip', {
+        type: 'button',
+        'aria-pressed': String(mood?.title === c.title),
+        onClick: () => select(mood?.title === c.title ? null : { title: c.title, params: c.params, browseId: c.browseId }),
+      }, c.title)));
   };
 
   const draw = () => {
@@ -108,10 +133,15 @@ export function viewHome(ctx) {
     const blocks = [];
 
     const hasFeed = Boolean(feed?.shelves?.length);
-    if (hasFeed || feedLoading) {
+    const chipsBar = moodChips();
+    if (hasFeed || feedLoading || chipsBar) {
       blocks.push(h('h1.visually-hidden', {}, 'Accueil'));
-      // les filtres restent ceux de l'accueil général pour pouvoir revenir en arrière
-      blocks.push(moodChips() || '');
+      blocks.push(chipsBar || '');
+      if (mood && !hasFeed && !feedLoading && !feedError) {
+        blocks.push(h('div.empty', {}, h('p.empty-title', {}, `Aucun contenu disponible pour « ${mood.title} »`),
+          h('p.muted', {}, net.online ? 'Ce filtre ne propose pas encore de contenu lisible dans Nexify.' : 'Ce filtre n’a pas été enregistré pour une utilisation hors connexion.'),
+          h('button.btn', { type: 'button', onClick: () => { mood = null; store.set('homeMood', null); loadFeed(); } }, 'Revenir à l’accueil')));
+      }
     } else {
       blocks.push(h('h1.page-title', {}, `${greeting()}${data.user ? `, ${data.user.username}` : ''}`));
     }

@@ -117,7 +117,6 @@ function drawDownloads(ctx, body) {
     const list = downloads.list();
     const tracks = list.map((d) => d.track);
     const pendingJobs = [...downloads.jobs.values()];
-    const est = await navigator.storage?.estimate?.().catch(() => null);
     if (!ctx.alive()) return;
     const used = downloads.totalSize();
     const actions = [
@@ -132,13 +131,9 @@ function drawDownloads(ctx, body) {
         },
       }, icon('trash'), 'Tout supprimer') : null,
     ];
-    const storage = h('div', { style: { maxWidth: '420px' } },
-      h('div.storage-bar', {}, h('i', { style: { width: `${est?.quota ? Math.min(100, ((est.usage || 0) / est.quota) * 100) : 0}%` } })),
-      h('span.muted', { style: { fontSize: '13px' } }, `${fmtSize(used)} utilisés par vos téléchargements${est?.quota ? ` • ${fmtSize(Math.max(0, est.quota - (est.usage || 0)))} disponibles` : ''}`));
     data.visit({ source: 'downloads', id: 'all', kind: 'downloads', name: 'Téléchargements' });
     body.replaceChildren(
-      collectionHead({ kind: 'downloads', kindLabel: 'Disponible hors connexion', title: 'Téléchargements', meta: plural(list.length, 'titre'), actions }),
-      storage,
+      collectionHead({ kind: 'downloads', kindLabel: 'Disponible hors connexion', title: 'Téléchargements', meta: list.length ? `${plural(list.length, 'titre')} • ${fmtSize(used)}` : plural(0, 'titre'), actions }),
       pendingJobs.length ? h('section.lib-section', { style: { marginTop: '24px' } },
         h('h2.sub', {}, `En cours (${pendingJobs.length})`),
         h('ul.tracks', {}, pendingJobs.map((j) => h('li.track', { style: { gridTemplateColumns: '48px minmax(0,1fr) auto 40px' } },

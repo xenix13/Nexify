@@ -210,6 +210,7 @@ test('YouTube Music : accueil (filtres, sélection rapide, cartes, albums, artis
   const home = parseHome(fx.ytmHomeResponse());
   assert.deepEqual(home.chips.map((c) => c.title), ['Détente', 'Énergie', 'Pour la route']);
   assert.equal(home.chips[1].params, 'P1');
+  assert.equal(home.chips[1].browseId, 'FEmusic_home');
   const [quick, again, news] = home.shelves;
   assert.equal(quick.layout, 'list');
   assert.equal(quick.items[0].track.key, 'ytm:qqqqqqqqqq1');
