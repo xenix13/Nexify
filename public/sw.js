@@ -14,8 +14,8 @@ self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(SHELL);
     await cache.addAll(ASSETS.map((u) => new Request(u, { cache: 'reload' })));
-    // première installation : on prend la main tout de suite
-    if (!self.registration.active) await self.skipWaiting();
+    // nouvelle version : elle prend la main tout de suite (l'appli se recharge d'elle-même)
+    await self.skipWaiting();
   })());
 });
 

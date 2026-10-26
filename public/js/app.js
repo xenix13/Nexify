@@ -341,30 +341,27 @@ window.addEventListener('unhandledrejection', (e) => {
 // ================= service worker (mode hors connexion et mises à jour) =================
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator) || !window.isSecureContext) return;
+  // Une nouvelle version s'installe et prend la main automatiquement : on recharge l'appli
+  // dès que possible, sans couper la musique (au prochain arrêt de la lecture).
+  // première prise en main (installation) : rien à recharger ; changements suivants : nouvelle version
+  let hadController = Boolean(navigator.serviceWorker.controller);
   let reloading = false;
-  let updating = false;
+  const reloadWhenIdle = () => {
+    if (reloading) return;
+    if (!player.playing) { reloading = true; location.reload(); return; }
+    toast('Nouvelle version de Nexify prête.', 'info', { label: 'Redémarrer', sticky: true, fn: () => { reloading = true; location.reload(); } });
+    const onChange = () => { if (!player.playing && !reloading) { reloading = true; location.reload(); } };
+    player.addEventListener('change', onChange);
+  };
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (!updating || reloading) return;
-    reloading = true;
-    location.reload();
+    if (hadController) reloadWhenIdle();
+    hadController = true;
   });
-  navigator.serviceWorker.register('/sw.js', { scope: '/' }).then((reg) => {
-    const offer = (worker) => {
-      toast('Une nouvelle version de Nexify est disponible.', 'info', {
-        label: 'Mettre à jour',
-        sticky: true,
-        fn: () => { updating = true; worker.postMessage('skipWaiting'); },
-      });
-    };
-    if (reg.waiting && navigator.serviceWorker.controller) offer(reg.waiting);
-    reg.addEventListener('updatefound', () => {
-      const w = reg.installing;
-      w?.addEventListener('statechange', () => {
-        if (w.state === 'installed' && navigator.serviceWorker.controller) offer(w);
-      });
-    });
-    // vérifie les mises à jour au retour sur l'appli
-    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && net.online) reg.update().catch(() => {}); });
+  navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' }).then((reg) => {
+    const check = () => { if (net.online) reg.update().catch(() => {}); };
+    // vérifie les mises à jour au retour sur l'appli et toutes les 30 minutes
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check(); });
+    setInterval(check, 30 * 60_000);
   }).catch(() => { /* certificat non reconnu ou navigateur sans service worker */ });
 }
 
