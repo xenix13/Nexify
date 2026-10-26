@@ -6,6 +6,7 @@ import { data } from '../data.js';
 import { downloads, fmtSize } from '../downloads.js';
 import { errorBlock, loading } from '../components.js';
 import { install } from '../install.js';
+import { native } from '../native.js';
 
 const SECTIONS = [
   ['playback', 'Lecture'], ['equalizer', 'Égaliseur'], ['appearance', 'Apparence'], ['downloads', 'Téléchargements'],
@@ -273,6 +274,19 @@ export async function logout() {
   }
   await downloads.removeAll();
   await data.wipe();
+  const server = native.server;
+  localStorage.clear();
+  if (native.isNative && server) native.setServer(server); // l'appli garde l'adresse du serveur
+  location.hash = '';
+  location.reload();
+}
+
+// Appli : changer de serveur Nexify (déconnexion complète de cet appareil)
+async function changeServer() {
+  if (!(await confirmDialog('Changer de serveur ?', 'Vous serez déconnecté et les données enregistrées sur cet appareil seront effacées.', 'Changer de serveur', { danger: true }))) return;
+  if (net.online) { try { await post('/api/auth/logout'); } catch { /* sans effet */ } }
+  await downloads.removeAll();
+  await data.wipe();
   localStorage.clear();
   location.hash = '';
   location.reload();
@@ -308,18 +322,23 @@ function aboutGroup() {
   const build = h('small', {}, '…');
   navigator.serviceWorker?.controller?.postMessage('build');
   navigator.serviceWorker?.addEventListener('message', (e) => { if (e.data?.build) build.textContent = `Version ${e.data.build}`; }, { once: true });
-  if (!navigator.serviceWorker?.controller) build.textContent = 'Mode hors connexion indisponible sur ce navigateur ou cette connexion (HTTPS requis).';
+  if (native.isNative) build.textContent = `Application ${native.kind === 'desktop' ? 'PC' : 'Android'}${native.engineVersion ? ` ${native.engineVersion}` : ''} • nouvelles versions sur github.com/xenix13/Nexify/releases`;
+  else if (!navigator.serviceWorker?.controller) build.textContent = 'Mode hors connexion indisponible sur ce navigateur ou cette connexion (HTTPS requis).';
   const inst = install.state();
   return group('about', 'À propos',
     row('Nexify', data.meta.version ? `Serveur ${data.meta.version}` : null, h('img', { src: '/icons/logo-128.png', alt: '', width: 40, height: 40 })),
+    native.isNative ? row('Serveur Nexify', native.server, h('button.btn.ghost', { type: 'button', onClick: changeServer }, 'Changer')) : null,
+    native.isNative ? row('Récupération de la musique', native.engineBase
+      ? `Sur cet appareil (${native.kind === 'desktop' ? 'moteur Nexify et yt-dlp' : 'NewPipeExtractor'}), sans passer par le serveur.`
+      : 'Moteur local indisponible : la musique passe par le serveur.', h(`span.status${native.engineBase ? '.on' : ''}`, {}, native.engineBase ? 'Actif' : 'Inactif')) : null,
     h('div.set-row', {}, h('div.set-text', {}, h('b', {}, 'Application'), build),
-      h('div.set-control', {}, h('button.btn.ghost', { type: 'button', disabled: !net.online, onClick: async () => {
+      h('div.set-control', {}, h('button.btn.ghost', { type: 'button', hidden: native.isNative, disabled: !net.online, onClick: async () => {
         const reg = await navigator.serviceWorker?.getRegistration();
         if (!reg) { toast('Mise à jour indisponible.'); return; }
         await reg.update().catch(() => {});
         toast(reg.installing || reg.waiting ? 'Une mise à jour est en cours d’installation.' : 'Nexify est à jour.');
       } }, 'Rechercher une mise à jour'))),
-    inst === 'installed' ? row('Installer l’application', 'Nexify est installée sur cet appareil.', h('span.status.on', {}, 'Installée'))
+    native.isNative ? null : inst === 'installed' ? row('Installer l’application', 'Nexify est installée sur cet appareil.', h('span.status.on', {}, 'Installée'))
       : inst === 'prompt' ? row('Installer l’application', 'Ajoutez Nexify à votre écran d’accueil ou à votre bureau pour l’ouvrir comme une application.', h('button.btn.primary', { type: 'button', onClick: () => install.prompt() }, 'Installer'))
         : inst === 'ios' ? row('Installer l’application', 'Dans Safari, touchez le bouton Partager, puis « Sur l’écran d’accueil ».', null)
           : row('Installer l’application', 'Ouvrez le menu de votre navigateur et choisissez « Installer Nexify » ou « Ajouter à l’écran d’accueil ».', null));

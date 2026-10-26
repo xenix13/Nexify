@@ -57,6 +57,45 @@ Sans domaine public, un certificat d’une autorité locale (mkcert, autorité d
 
 Les mises à jour du serveur sont détectées automatiquement : l’application propose « Mettre à jour ».
 
+## Applis Android et PC (sans serveur pour la musique)
+
+En plus de l’appli web, Nexify existe en application pour **Android**, **Windows**, **Linux** et **macOS**. L’interface est la même, mais l’appareil récupère lui-même la musique sur YouTube Music : le serveur ne sert plus qu’à la connexion et à la synchronisation des playlists et titres « J’aime ».
+
+| | Appli web (PWA) | Applis Android et PC |
+|---|---|---|
+| Lecture et téléchargement | via le serveur | **par l’appareil** (serveur en secours) |
+| Recherche, accueil | via le serveur | serveur s’il répond, sinon **par l’appareil** |
+| Serveur éteint ou injoignable | titres téléchargés uniquement | **tout fonctionne** (seule la synchronisation attend) |
+| Certificat HTTPS reconnu | obligatoire | inutile : `http://IP:8443` suffit sur le réseau local |
+
+- **PC (Electron)** : l’appli embarque le moteur Nexify et télécharge au premier lancement **yt-dlp** et **Deno** (tenus à jour automatiquement). Recherche, accueil, radio et lecture se font sur l’ordinateur.
+- **Android (Capacitor)** : un module natif basé sur **NewPipeExtractor** (le moteur de l’appli NewPipe) fournit la recherche et le flux audio. Une notification « Lecture en cours » permet de continuer écran éteint. Les titres Spotify et Deezer sont mis en correspondance par le serveur, puis lus depuis le téléphone.
+- **iPhone / iPad** : pas d’appli (il faudrait un compte développeur Apple) ; utilisez l’appli web.
+
+### Télécharger les applis
+
+Les fichiers sont construits par GitHub Actions et publiés dans les [Releases](https://github.com/xenix13/Nexify/releases) à chaque étiquette `v*` :
+
+- **Android** : `Nexify-android.apk` (autorisez l’installation depuis votre navigateur ou gestionnaire de fichiers).
+- **Windows** : `Nexify-…-win-x64.exe`. Windows SmartScreen peut avertir (appli non signée) : « Informations complémentaires » → « Exécuter quand même ».
+- **Linux** : `.AppImage` (rendre exécutable) ou `.deb`.
+- **macOS** : `.dmg` (appli non signée : clic droit → Ouvrir la première fois).
+
+Au premier lancement, indiquez l’adresse de votre serveur (par exemple `http://192.168.1.50:8443`), puis connectez-vous.
+
+Pour construire sans publier : onglet **Actions → Applications → Run workflow** ; les fichiers sont dans les artefacts du lancement.
+
+### Signature de l’APK Android (recommandé)
+
+Sans clé de signature, chaque APK est signé avec une clé de débogage différente : Android refusera alors de mettre à jour l’appli par-dessus la précédente (il faudra la désinstaller, ce qui efface les téléchargements). Pour des mises à jour normales, créez une fois une clé et enregistrez-la dans les secrets du dépôt (**Settings → Secrets and variables → Actions**) :
+
+```bash
+keytool -genkeypair -v -keystore nexify.jks -alias nexify -keyalg RSA -keysize 2048 -validity 10000
+base64 -w0 nexify.jks    # contenu du secret ANDROID_KEYSTORE_BASE64
+```
+
+Secrets : `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` (`nexify`), `ANDROID_KEY_PASSWORD`. Gardez `nexify.jks` en lieu sûr.
+
 ## Connecter les services
 
 **YouTube Music** : la recherche, la lecture et la radio fonctionnent sans compte. Pour retrouver votre bibliothèque, collez l’en-tête Cookie de music.youtube.com dans **Paramètres → Services** (instructions dans l’appli). Il est chiffré sur le serveur (AES-256-GCM).
@@ -120,6 +159,11 @@ public/
   js/downloads.js     téléchargements
   js/audio.js         moteur audio : deux platines, égaliseur, compresseur, fondus
   js/player.js        file d’attente, préchargement, fondu enchaîné, radio, Spotify
+  js/native.js        applis Android / PC : adresse du serveur, jeton, moteur local
+  js/source.js        d'où lire un titre (appareil d'abord, serveur en secours)
   js/views/           accueil, recherche, bibliothèque, collections, paramètres, lecteur
 deploy/               install.sh et services systemd
+desktop/              appli PC (Electron) : moteur local, yt-dlp et Deno téléchargés au premier lancement
+mobile/               appli Android (Capacitor) : module natif NewPipeExtractor (native/java), scripts de génération
+.github/workflows/    construction des applis et publication des Releases
 ```

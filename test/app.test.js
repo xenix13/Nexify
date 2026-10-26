@@ -375,13 +375,65 @@ test('accueil YouTube Music, album et mix personnalisé', async () => {
   assert.equal(r.data.collection.tracks[0].title, 'Dans le mix');
 });
 
+test('applis Android / PC : jeton, accès d’une autre origine, jeton dans l’adresse des médias', async () => {
+  let r = await fetch(`${base}/api/auth/login`, { method: 'OPTIONS', headers: { origin: 'http://localhost', 'access-control-request-method': 'POST', 'access-control-request-headers': 'authorization,content-type,x-nexify' } });
+  assert.equal(r.status, 204);
+  assert.equal(r.headers.get('access-control-allow-origin'), '*');
+  assert.match(r.headers.get('access-control-allow-headers'), /authorization/);
+  r = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { origin: 'http://localhost', 'content-type': 'application/json', 'x-nexify': '1', 'x-nexify-client': 'native' }, body: JSON.stringify({ username: 'colas', password: 'motdepasse1' }) });
+  const { token } = await r.json();
+  assert.ok(token && token.length > 30);
+  const auth = { origin: 'http://localhost', authorization: `Bearer ${token}` };
+  r = await fetch(`${base}/api/sync`, { headers: auth });
+  assert.equal(r.status, 200);
+  assert.equal(r.headers.get('access-control-allow-origin'), '*');
+  r = await fetch(`${base}/api/ytm/stream/FGBhQbmPwH8?access_token=${token}`, { headers: { origin: 'http://localhost', range: 'bytes=0-9' } });
+  assert.equal(r.status, 206);
+  assert.match(r.headers.get('access-control-expose-headers'), /content-range/);
+  r = await fetch(`${base}/api/sync?access_token=${token}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-nexify': '1' }, body: '{}' });
+  assert.equal(r.status, 401, 'jeton dans l’adresse : lecture seule');
+  r = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-nexify': '1' }, body: JSON.stringify({ username: 'colas', password: 'motdepasse1' }) });
+  assert.equal((await r.json()).token, undefined, 'pas de jeton pour le navigateur');
+  r = await fetch(`${base}/api/auth/logout`, { method: 'POST', headers: { ...auth, 'x-nexify': '1' } });
+  r = await fetch(`${base}/api/sync`, { headers: auth });
+  assert.equal(r.status, 401, 'jeton révoqué à la déconnexion');
+});
+
+test('moteur local de l’appli PC : sans compte, yt-dlp attendu avant la première lecture', async () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'nexify-local-'));
+  let release;
+  const ready = new Promise((r) => { release = r; });
+  const config = { ...getConfig({ APP_SECRET: 'secret-local-assez-long', DATA_DIR: d }), localMode: true };
+  const local = createApp(config, { fetch: fakeFetch, spawn: fakeSpawn, ytdlpReady: ready });
+  const srv = http.createServer((q, s) => local.handle(q, s));
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const lb = `http://127.0.0.1:${srv.address().port}`;
+  try {
+    let r = await (await fetch(`${lb}/api/health`)).json();
+    assert.equal(r.engine, 'desktop');
+    assert.ok(r.features.includes('stream'));
+    r = await fetch(`${lb}/api/search?q=daft&sources=ytm`);
+    assert.equal(r.status, 200, 'aucune connexion requise');
+    const before = spawned.length;
+    const pending = fetch(`${lb}/api/ytm/stream/abcdefghijk`, { headers: { range: 'bytes=0-9' } });
+    await new Promise((x) => setTimeout(x, 100));
+    assert.equal(spawned.length, before, 'attend que yt-dlp soit prêt');
+    release();
+    r = await pending;
+    assert.equal(r.status, 206);
+  } finally {
+    srv.close();
+    fs.rmSync(d, { recursive: true, force: true });
+  }
+});
+
 test('service worker : liste des fichiers et empreinte de version', async () => {
   const r = await fetch(`${base}/sw.js`);
   assert.equal(r.status, 200);
   assert.equal(r.headers.get('cache-control'), 'no-cache');
   const body = await r.text();
   assert.doesNotMatch(body, /__BUILD__|__ASSETS__/);
-  assert.match(body, /const BUILD = '1\.0\.0-[0-9a-f]{10}'/);
+  assert.match(body, /const BUILD = '1\.1\.0-[0-9a-f]{10}'/);
   const assets = JSON.parse(body.match(/const ASSETS = (\[.*?\]);/)[1]);
   for (const a of ['/', '/css/style.css', '/js/app.js', '/js/audio.js', '/manifest.webmanifest', '/icons/icon-192.png']) assert.ok(assets.includes(a), a);
   assert.ok(!assets.includes('/sw.js'));

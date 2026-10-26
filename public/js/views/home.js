@@ -1,6 +1,7 @@
 // Accueil : étagères construites à partir des données gardées sur l'appareil.
 import { h, icon, plural, SOURCE_NAMES, toast } from '../ui.js';
-import { net, get, store } from '../api.js';
+import { net, music, store } from '../api.js';
+import { native } from '../native.js';
 import { db } from '../db.js';
 import { data } from '../data.js';
 import { downloads } from '../downloads.js';
@@ -74,10 +75,11 @@ export function viewHome(ctx) {
   async function fetchFeed(m, refresh) {
     const key = feedKey(m);
     const cached = await db.get('kv', key).catch(() => null);
-    if (cached && (!net.online || (!refresh && Date.now() - cached.at < 15 * 60_000))) return { data: cached, fresh: false };
-    if (!net.online) return { data: null, fresh: false };
+    const reachable = net.online || native.has('home');
+    if (cached && (!reachable || (!refresh && Date.now() - cached.at < 15 * 60_000))) return { data: cached, fresh: false };
+    if (!reachable) return { data: null, fresh: false };
     try {
-      const data = await get(feedUrl(m), { timeout: 45_000 });
+      const data = await music(feedUrl(m), { timeout: 45_000 });
       await db.put('kv', data, key).catch(() => {});
       return { data, fresh: true };
     } catch (e) {
@@ -93,7 +95,7 @@ export function viewHome(ctx) {
     if (!ctx.alive() || feedKey(mood) !== key) return;
     feed = cached;
     feedError = '';
-    feedLoading = !cached && net.online;
+    feedLoading = !cached && (net.online || native.has('home'));
     draw();
     // filtres de l'accueil général (pour pouvoir changer de filtre ou revenir)
     if (m) fetchFeed(null, false).then(({ data }) => { if (data?.chips?.length && ctx.alive()) { baseChips = data.chips; draw(); } }).catch(() => {});

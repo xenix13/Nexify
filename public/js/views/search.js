@@ -1,6 +1,7 @@
 // Recherche : YouTube Music, Spotify et Deezer en même temps ; dans la bibliothèque locale hors connexion.
 import { h, icon, sourceMark, SOURCE_NAMES, plural, toast } from '../ui.js';
-import { net, get, store } from '../api.js';
+import { net, get, music, store } from '../api.js';
+import { native } from '../native.js';
 import { data } from '../data.js';
 import { downloads } from '../downloads.js';
 import { trackList, errorBlock, loading } from '../components.js';
@@ -61,12 +62,12 @@ export function viewSearch(ctx) {
 
   async function run(query) {
     current = query;
-    if (filter === 'local' || !net.online) { showLocal(query, !net.online && filter !== 'local'); return; }
+    if (filter === 'local' || (!net.online && !native.has('search'))) { showLocal(query, !net.online && filter !== 'local'); return; }
     const sources = filter === 'all' ? ALL : [filter];
     results.replaceChildren(loading('Recherche en cours…'));
     let res;
     try {
-      res = await get(`/api/search?q=${encodeURIComponent(query)}&sources=${sources.join(',')}`, { timeout: 30_000 });
+      res = await music(`/api/search?q=${encodeURIComponent(query)}&sources=${sources.join(',')}`, { timeout: 30_000 });
     } catch (e) {
       if (!ctx.alive() || current !== query) return;
       if (e.status === 0) { showLocal(query, true); return; }
@@ -77,7 +78,7 @@ export function viewSearch(ctx) {
     const local = data.searchLocal(query, downloads.tracks()).slice(0, 5);
     results.replaceChildren(
       filter === 'all' && local.length ? section('local', 'Dans votre bibliothèque', local) : '',
-      ...sources.map((s) => sourceSection(s, query, res.results[s])),
+      ...sources.filter((s) => res.results[s]).map((s) => sourceSection(s, query, res.results[s])),
     );
   }
 

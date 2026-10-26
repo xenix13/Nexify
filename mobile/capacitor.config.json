@@ -1,0 +1,13 @@
+{
+  "appId": "fr.nexify.app",
+  "appName": "Nexify",
+  "webDir": "www",
+  "backgroundColor": "#000000",
+  "server": {
+    "androidScheme": "http",
+    "cleartext": true
+  },
+  "android": {
+    "allowMixedContent": true
+  }
+}

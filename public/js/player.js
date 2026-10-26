@@ -3,7 +3,9 @@
 //             Sert pour YouTube Music, les correspondances Spotify/Deezer, les extraits et les téléchargements.
 //  - sdk    : Spotify Web Playback SDK (ce navigateur devient un appareil Spotify, Premium)
 //  - remote : un appareil Spotify Connect piloté par l'API
-import { post, put, get, store, net, artUrl } from './api.js';
+import { put, get, store, net, artUrl, music, mediaUrl } from './api.js';
+import { native } from './native.js';
+import { resolveSource, playable } from './source.js';
 import { AudioEngine } from './audio.js';
 import { prefs } from './prefs.js';
 import { data } from './data.js';
@@ -209,7 +211,7 @@ export class Player extends EventTarget {
     this.playList([track], 0, { kind: 'radio', name: `Radio : ${track.title}` });
     this._radioSeed = track.key;
     try {
-      const { tracks } = await post('/api/radio', { track });
+      const { tracks } = await music('/api/radio', { method: 'POST', body: { track } });
       if (this.queue[0]?.key !== track.key) return;
       const have = new Set(this.queue.map((t) => t.key));
       this.queue.push(...tracks.filter((t) => !have.has(t.key)));
@@ -224,7 +226,7 @@ export class Player extends EventTarget {
     if (!seed || !prefs.get('autoplay') || !net.online || this._radioSeed === seed.key) return false;
     this._radioSeed = seed.key;
     try {
-      const { tracks } = await post('/api/radio', { track: seed });
+      const { tracks } = await music('/api/radio', { method: 'POST', body: { track: seed } });
       const have = new Set(this.queue.map((t) => t.key));
       const fresh = tracks.filter((t) => !have.has(t.key)).slice(0, 25);
       if (!fresh.length) return false;
@@ -241,7 +243,7 @@ export class Player extends EventTarget {
   _nextIndex() {
     const n = this.queue.length;
     if (!n) return null;
-    const ok = (i) => net.online || downloads.has(this.queue[i]?.key);
+    const ok = (i) => playable(this.queue[i]);
     for (let step = 1; step <= n; step++) {
       const raw = this.index + step;
       if (raw >= n && this.repeat !== 'all') return null;
@@ -258,11 +260,8 @@ export class Player extends EventTarget {
       const url = await downloads.objectUrl(track.key);
       if (url) return { plan: { mode: 'audio', url, offline: true }, url, revoke: () => URL.revokeObjectURL(url) };
     }
-    if (!net.online) {
-      throw Object.assign(new Error('Ce titre n’est pas téléchargé. Il sera disponible au retour de la connexion.'), { code: 'offline' });
-    }
-    const { plan } = await post('/api/resolve', { track, prefer });
-    return { plan, url: plan.url, revoke: null };
+    const { plan, url } = await resolveSource(track, { prefer });
+    return { plan, url, revoke: null };
   }
 
   // ---------- lecture
@@ -445,9 +444,21 @@ export class Player extends EventTarget {
     const token = this._token;
     const t = this.current;
     const src = d.el.getAttribute('src') || '';
+    // appli : l'appareil n'a pas pu récupérer l'audio, on passe par le serveur
+    if (this.plan?.local && net.online && t) {
+      try {
+        const src2 = await resolveSource(t, { remoteOnly: true });
+        if (token !== this._token || !src2.url) return;
+        this.plan = src2.plan;
+        this.emit();
+        this.engine.load(d, src2.url);
+        d.el.play().catch(() => {});
+        return;
+      } catch { /* message ci-dessous */ }
+    }
     // titre lu via sa version YouTube Music qui échoue : repli sur l'extrait d'origine
-    if (this.plan?.via && t?.previewUrl) {
-      this.plan = { mode: 'audio', url: `/api/preview?u=${encodeURIComponent(t.previewUrl)}`, preview: true };
+    if (this.plan?.via && t?.previewUrl && !this.plan.preview) {
+      this.plan = { mode: 'audio', url: mediaUrl(`/api/preview?u=${encodeURIComponent(t.previewUrl)}`), preview: true };
       notice(this, `${t.title} : version complète indisponible, lecture de l’extrait.`);
       this.emit();
       this.engine.load(d, this.plan.url);
@@ -455,7 +466,7 @@ export class Player extends EventTarget {
       return;
     }
     let message = 'Le flux audio n’a pas pu être lu.';
-    if (src.startsWith('/api/')) {
+    if (src.startsWith('/api/') || src.includes('/api/ytm/stream/')) {
       try {
         const r = await fetch(src, { headers: { range: 'bytes=0-0' } });
         if (!r.ok) message = (await r.json()).error || message;
@@ -708,7 +719,13 @@ export class Player extends EventTarget {
       last = Date.now();
       try { ms.setPositionState({ duration: this.duration, position: Math.min(this.position, this.duration), playbackRate: 1 }); } catch { /* valeurs transitoires */ }
     });
-    this.addEventListener('change', () => { ms.playbackState = this.playing ? 'playing' : this.current ? 'paused' : 'none'; });
+    let lastSig = '';
+    this.addEventListener('change', () => {
+      ms.playbackState = this.playing ? 'playing' : this.current ? 'paused' : 'none';
+      // Android : notification de lecture pour continuer écran éteint
+      const sig = `${this.playing}:${this.current?.key}`;
+      if (sig !== lastSig) { lastSig = sig; native.playback(this.playing, this.current); }
+    });
   }
 }
 

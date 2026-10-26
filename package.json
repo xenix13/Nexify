@@ -1,6 +1,6 @@
 {
   "name": "nexify",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Lecteur de musique auto-hébergé façon YouTube Music : application installable (PWA), hors connexion, téléchargements, égaliseur et fondu enchaîné",
   "type": "module",
   "private": true,

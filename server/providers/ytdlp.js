@@ -8,7 +8,8 @@ import { HttpError } from '../http.js';
 export const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 
 export class YtDlp {
-  constructor({ config, spawnImpl = spawn, fetchImpl = fetch }) {
+  constructor({ config, spawnImpl = spawn, fetchImpl = fetch, ready = null }) {
+    this.ready = ready; // appli PC : yt-dlp est téléchargé au premier lancement
     this.cfg = config.ytdlp;
     this.spawn = spawnImpl;
     this.fetch = fetchImpl;
@@ -23,7 +24,12 @@ export class YtDlp {
     return a;
   }
 
-  resolve(videoId) {
+  async resolve(videoId) {
+    if (this.ready) await this.ready;
+    return this._resolve(videoId);
+  }
+
+  _resolve(videoId) {
     if (!VIDEO_ID.test(videoId)) return Promise.reject(new HttpError(400, 'Identifiant vidéo invalide'));
     const hit = this.cache.get(videoId);
     if (hit && hit.expiresAt > Date.now()) return Promise.resolve(hit.url);
@@ -33,7 +39,7 @@ export class YtDlp {
       let err = '';
       let child;
       try {
-        child = this.spawn(this.cfg.bin, this.args(videoId), { stdio: ['ignore', 'pipe', 'pipe'] });
+        child = this.spawn(this.cfg.bin, this.args(videoId), { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
       } catch (e) {
         reject(new HttpError(500, `yt-dlp introuvable (${e.message})`));
         return;

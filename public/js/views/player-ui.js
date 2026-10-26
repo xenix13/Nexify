@@ -1,6 +1,7 @@
 // Barre de lecture (bas de l'écran) et vue « Lecture en cours » (plein écran).
 import { h, icon, iconButton, setIcon, sourceMark, fmtTime, artwork, toast, popMenu, dominantColor } from '../ui.js';
-import { net, post } from '../api.js';
+import { net, music } from '../api.js';
+import { native } from '../native.js';
 import { player } from '../player.js';
 import { data } from '../data.js';
 import { prefs } from '../prefs.js';
@@ -192,12 +193,12 @@ export function createNowPlaying(el, shell) {
       return;
     }
     // titres similaires (radio YouTube Music)
-    if (!net.online) { panel.replaceChildren(h('p.muted', { style: { padding: '16px 12px' } }, 'Les suggestions nécessitent une connexion au serveur.')); return; }
+    if (!net.online && !native.has('radio')) { panel.replaceChildren(h('p.muted', { style: { padding: '16px 12px' } }, 'Les suggestions nécessitent une connexion au serveur.')); return; }
     const r = related.get(t.key);
     if (!r) {
       panel.replaceChildren(h('p.loading', {}, 'Recherche de titres similaires…'));
       related.set(t.key, { pending: true });
-      post('/api/radio', { track: t }).then(({ tracks }) => related.set(t.key, { tracks }))
+      music('/api/radio', { method: 'POST', body: { track: t } }).then(({ tracks }) => related.set(t.key, { tracks }))
         .catch((e) => related.set(t.key, { error: e.message }))
         .finally(() => { if (player.current?.key === t.key && tab === 'related') drawPanel(); });
       return;

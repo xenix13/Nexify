@@ -1,7 +1,9 @@
 // Téléchargements : fichiers audio complets gardés sur l'appareil pour l'écoute hors connexion.
 // Les titres sont téléchargés un par un ; la file reprend d'elle-même au retour de la connexion.
 import { db } from './db.js';
-import { net, post, artUrl } from './api.js';
+import { net, artUrl, artOverrides } from './api.js';
+import { native } from './native.js';
+import { resolveSource } from './source.js';
 
 const PINNED = 'nexify-art-pinned';
 
@@ -20,6 +22,13 @@ class Downloads extends EventTarget {
   async load() {
     const list = await db.all('downloads').catch(() => []);
     this.items = new Map(list.map((d) => [d.key, d]));
+    // pochettes gardées avec les titres : affichées même sans connexion
+    for (const d of list) {
+      const art = d.track?.artwork;
+      if (!art || artOverrides.has(art)) continue;
+      const blob = await db.get('audio', `art:${art}`).catch(() => null);
+      if (blob) artOverrides.set(art, URL.createObjectURL(blob));
+    }
   }
 
   has(key) { return this.items.has(key); }
@@ -63,7 +72,11 @@ class Downloads extends EventTarget {
     this.items.delete(key);
     await db.del('audio', key).catch(() => {});
     await db.del('downloads', key).catch(() => {});
-    if (d?.track?.artwork && 'caches' in window) caches.open(PINNED).then((c) => c.delete(artUrl(d.track.artwork))).catch(() => {});
+    const art = d?.track?.artwork;
+    if (art && ![...this.items.values()].some((x) => x.track?.artwork === art)) {
+      await db.del('audio', `art:${art}`).catch(() => {});
+      artOverrides.delete(art);
+    }
     this.emit(key);
   }
 
@@ -72,6 +85,7 @@ class Downloads extends EventTarget {
     this.items.clear();
     await db.clear('audio').catch(() => {});
     await db.clear('downloads').catch(() => {});
+    artOverrides.clear();
     if ('caches' in window) await caches.delete(PINNED).catch(() => {});
     this.emit(null);
   }
@@ -87,7 +101,7 @@ class Downloads extends EventTarget {
     this.running = true;
     try {
       for (;;) {
-        if (!net.online) break;
+        if (!net.online && !native.has('stream') && !native.has('resolve')) break;
         const job = [...this.jobs.values()].find((j) => j.status === 'queued');
         if (!job) break;
         await this._download(job);
@@ -105,8 +119,8 @@ class Downloads extends EventTarget {
     const ac = new AbortController();
     this._abort = ac;
     try {
-      const { plan } = await post('/api/resolve', { track: t, download: true }, { timeout: 60_000 });
-      const res = await fetch(plan.url, { signal: ac.signal, credentials: 'same-origin' });
+      const { plan, url } = await resolveSource(t, { download: true });
+      const res = await fetch(url, { signal: ac.signal, credentials: native.isNative ? 'omit' : 'same-origin' });
       if (!res.ok) {
         const msg = await res.json().then((d) => d.error).catch(() => '');
         throw new Error(msg || `Téléchargement impossible (HTTP ${res.status})`);
@@ -153,12 +167,14 @@ class Downloads extends EventTarget {
   }
 
   async _pinArtwork(t) {
-    if (!t.artwork || !('caches' in window)) return;
+    if (!t.artwork || artOverrides.has(t.artwork)) return;
     try {
-      const url = artUrl(t.artwork);
-      const res = await fetch(url, { credentials: 'same-origin' });
-      if (res.ok) await (await caches.open(PINNED)).put(url, res);
-    } catch { /* pochette facultative */ }
+      const res = await fetch(artUrl(t.artwork), { credentials: native.isNative ? 'omit' : 'same-origin' });
+      if (!res.ok) return;
+      const blob = await res.blob();
+      await db.put('audio', blob, `art:${t.artwork}`);
+      artOverrides.set(t.artwork, URL.createObjectURL(blob));
+    } catch { /* pochette facultative (image d'un autre site sans CORS sur Android) */ }
   }
 }
 

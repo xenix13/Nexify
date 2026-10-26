@@ -1,6 +1,7 @@
 // Composants partagés : listes de titres, menus d'actions, cartes, étagères, en-têtes.
 import { h, icon, iconButton, setIcon, sourceMark, SOURCE_NAMES, fmtTime, plural, artwork, specialArt, toast, modal, popMenu } from './ui.js';
 import { net } from './api.js';
+import { playableWithoutServer } from './source.js';
 import { player } from './player.js';
 import { data } from './data.js';
 import { downloads } from './downloads.js';
@@ -39,7 +40,7 @@ export function trackRow(t, i, tracks, opts = {}) {
     toast(on ? 'Ajouté à vos titres « J’aime »' : 'Retiré de vos titres « J’aime »');
   }, { class: `track-like${data.isLiked(t.key) ? ' on' : ''}` });
   const row = h('li.track', {
-    dataset: { key: t.key },
+    dataset: { key: t.key, source: t.source },
     onDblclick: (e) => { if (!e.target.closest('button')) play(); },
     onClick: (e) => { if (touch.matches && !e.target.closest('button')) play(); },
     onContextmenu: (e) => { e.preventDefault(); trackMenu(e.currentTarget.querySelector('.track-more') || e.currentTarget, t, i, opts); },
@@ -65,7 +66,7 @@ export function refreshRows(root = document) {
     const key = row.dataset.key;
     row.classList.toggle('is-current', key === cur);
     row.classList.toggle('is-playing', key === cur && player.playing);
-    row.classList.toggle('is-unavailable', offline && !downloads.has(key));
+    row.classList.toggle('is-unavailable', offline && !playableWithoutServer({ key, source: row.dataset.source }));
     const slot = row.querySelector('.dl-slot');
     if (slot) slot.replaceChildren(dlIndicator(key) || '');
     const like = row.querySelector('.track-like');

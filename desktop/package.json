@@ -1,0 +1,35 @@
+{
+  "name": "nexify-desktop",
+  "productName": "Nexify",
+  "version": "1.1.0",
+  "description": "Nexify pour Windows, macOS et Linux",
+  "author": "xenix13",
+  "license": "MIT",
+  "type": "module",
+  "main": "main.mjs",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --publish never"
+  },
+  "devDependencies": {
+    "electron": "^44.9.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "fr.nexify.app",
+    "productName": "Nexify",
+    "artifactName": "Nexify-${version}-${os}-${arch}.${ext}",
+    "directories": { "output": "dist" },
+    "files": ["main.mjs", "preload.cjs", "tools.mjs", "icons/**", "package.json"],
+    "extraResources": [
+      { "from": "../server", "to": "nexify/server" },
+      { "from": "../public", "to": "nexify/public" },
+      { "from": "../package.json", "to": "nexify/package.json" }
+    ],
+    "win": { "target": ["nsis"], "icon": "icons/icon.png" },
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "shortcutName": "Nexify" },
+    "linux": { "target": ["AppImage", "deb"], "category": "Audio", "icon": "icons/icon.png", "maintainer": "xenix13" },
+    "mac": { "target": ["dmg"], "category": "public.app-category.music", "icon": "icons/icon.png" }
+  }
+}

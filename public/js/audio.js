@@ -49,6 +49,7 @@ export class AudioEngine {
   _deck(id) {
     const el = new Audio();
     el.preload = 'auto';
+    el.crossOrigin = 'anonymous'; // flux du moteur de l'appli ou du serveur (autre origine) : Web Audio
     el.setAttribute('playsinline', '');
     return { id, el, level: 1, gain: null, revoke: null, fade: null };
   }

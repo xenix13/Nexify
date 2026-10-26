@@ -1,4 +1,5 @@
 // Appels à l'API Nexify et suivi de la connexion au serveur.
+import { native } from './native.js';
 export class ApiError extends Error {
   constructor(message, status, data) {
     super(message);
@@ -29,9 +30,9 @@ class Net extends EventTarget {
   }
 
   async check() {
-    if (navigator.onLine === false) { this.set(false); return false; }
+    if (navigator.onLine === false || (native.isNative && !native.server)) { this.set(false); return false; }
     try {
-      const r = await fetchWithTimeout('/api/health', { cache: 'no-store' }, 5000);
+      const r = await fetchWithTimeout(`${native.server}/api/health`, { cache: 'no-store' }, 5000);
       this.set(r.ok);
       return r.ok;
     } catch {
@@ -58,9 +59,14 @@ export const unauthorized = new EventTarget();
 export async function api(path, { method = 'GET', body, timeout = 25_000 } = {}) {
   const headers = { 'x-nexify': '1' };
   if (body !== undefined) headers['content-type'] = 'application/json';
+  if (native.isNative) {
+    headers['x-nexify-client'] = 'native';
+    if (native.token) headers.authorization = `Bearer ${native.token}`;
+  }
   let r;
   try {
-    r = await fetchWithTimeout(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), credentials: 'same-origin', cache: 'no-store' }, timeout);
+    if (native.isNative && !native.server) throw new Error('serveur non configuré');
+    r = await fetchWithTimeout(native.server + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), credentials: native.isNative ? 'omit' : 'same-origin', cache: 'no-store' }, timeout);
   } catch {
     net.set(false);
     throw new ApiError('Le serveur Nexify est injoignable. Vérifiez votre connexion.', 0, { code: 'offline' });
@@ -91,9 +97,38 @@ export const store = {
   },
 };
 
-// Adresse d'une pochette, relayée par le serveur (gardée hors ligne par le service worker)
+// Pochettes des titres téléchargés, gardées sur l'appareil (adresse d'origine → blob:)
+export const artOverrides = new Map();
+
+// Adresse d'une pochette : relayée par le serveur (navigateur, gardée hors ligne par le
+// service worker), par le moteur local (PC) ou chargée directement (Android)
 export function artUrl(url) {
   if (!url) return '';
+  if (artOverrides.has(url)) return artOverrides.get(url);
   if (url.startsWith('/') || url.startsWith('blob:') || url.startsWith('data:')) return url;
+  if (native.has('img')) return native.engineUrl(`/api/img?u=${encodeURIComponent(url)}`);
+  if (native.isNative) return url;
   return `/api/img?u=${encodeURIComponent(url)}`;
+}
+
+// Adresse d'un flux du serveur lisible par <audio> (applis : jeton dans l'adresse)
+export function mediaUrl(path) {
+  if (!native.isNative || !path.startsWith('/')) return path;
+  return `${native.server}${path}${path.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(native.token)}`;
+}
+
+// Fonctions musicales (recherche, accueil, radio, playlists publiques) : le serveur s'il
+// répond, sinon le moteur de l'appli (PC / Android), qui n'a besoin que d'Internet.
+const FEATURE = [[/^\/api\/search/, 'search'], [/^\/api\/home/, 'home'], [/^\/api\/radio/, 'radio'], [/^\/api\/collection\/ytm\//, 'collection'], [/^\/api\/resolve/, 'resolve']];
+export async function music(path, opts = {}) {
+  const feature = FEATURE.find(([re]) => re.test(path))?.[1];
+  const local = feature && native.has(feature);
+  if (net.online || !local) {
+    try {
+      return await api(path, opts);
+    } catch (e) {
+      if (!(local && e.status === 0)) throw e;
+    }
+  }
+  return native.engineJson(path, opts);
 }

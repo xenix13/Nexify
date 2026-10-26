@@ -40,6 +40,13 @@ const CSP = [
   "frame-ancestors 'self'",
 ].join('; ');
 
+// Appli PC : l'interface servie par le moteur local doit pouvoir joindre un serveur Nexify
+// en HTTP sur le réseau local, et charger pochettes et flux depuis ce serveur.
+const CSP_LOCAL = CSP
+  .replace("connect-src 'self' https: wss:", "connect-src 'self' http: https: ws: wss:")
+  .replace("img-src 'self' https: data: blob:", "img-src 'self' http: https: data: blob:")
+  .replace("media-src 'self' https: blob:", "media-src 'self' http: https: blob:");
+
 // Par défaut, tout passe par le moteur audio de Nexify (égaliseur, fondu, téléchargement).
 const DEFAULT_SETTINGS = { spotifyPlayback: 'ytm', deezerPlayback: 'ytm' };
 const PLAYLIST_ID = /^[A-Za-z0-9_-]{6,40}$/;
@@ -51,7 +58,7 @@ export function createApp(config, deps = {}) {
   const spotify = new SpotifyProvider({ config, store, cipher, fetchImpl });
   const deezer = new DeezerProvider({ store, fetchImpl });
   const ytm = new YtMusicProvider({ config, store, cipher, fetchImpl });
-  const ytdlp = new YtDlp({ config, fetchImpl, spawnImpl: deps.spawn });
+  const ytdlp = new YtDlp({ config, fetchImpl, spawnImpl: deps.spawn, ready: deps.ytdlpReady });
   const matcher = new Matcher({ ytm, store });
   const providers = { spotify, deezer, ytm };
   const loginAttempts = new Map();
@@ -64,14 +71,31 @@ export function createApp(config, deps = {}) {
     providers: { spotify: spotify.status(u), deezer: deezer.status(u), ytm: ytm.status(u) },
   });
 
-  function startSession(res, user) {
+  // Session : cookie pour le navigateur ; jeton (Authorization: Bearer) pour les applis Android et PC.
+  function startSession(req, res, user) {
     const sid = randomId(32);
     store.putSession(sid, { userId: user.id, expiresAt: Date.now() + SESSION_DAYS * 86_400_000 });
     res.setHeader('set-cookie', cookie(SESSION_COOKIE, sid, { maxAge: SESSION_DAYS * 86400, secure: config.https }));
+    return req.headers['x-nexify-client'] === 'native' ? sid : undefined;
   }
 
+  function sessionId(req) {
+    const auth = /^Bearer\s+(\S+)$/i.exec(req.headers.authorization || '');
+    if (auth) return auth[1];
+    // lecteurs audio et images des applis : jeton dans l'adresse (requêtes GET uniquement)
+    if (req.method === 'GET' || req.method === 'HEAD') {
+      const q = new URL(req.url, 'http://localhost').searchParams.get('access_token');
+      if (q) return q;
+    }
+    return parseCookies(req.headers.cookie)[SESSION_COOKIE];
+  }
+
+  // Moteur local de l'appli PC : un seul utilisateur implicite, sans compte
+  const localUser = { id: 'local', username: 'local', isAdmin: false, settings: { ...DEFAULT_SETTINGS } };
+
   function currentUser(req) {
-    const sid = parseCookies(req.headers.cookie)[SESSION_COOKIE];
+    if (config.localMode) return localUser;
+    const sid = sessionId(req);
     const s = sid && store.session(sid);
     if (!s) return null;
     // session glissante : prolongée à chaque usage
@@ -178,7 +202,9 @@ export function createApp(config, deps = {}) {
   // ---- routes
   const r = new Router();
 
-  r.get('/api/health', () => ({ ok: true, version: VERSION }));
+  r.get('/api/health', () => (config.localMode
+    ? { ok: true, version: VERSION, engine: 'desktop', features: ['stream', 'resolve', 'search', 'home', 'radio', 'collection', 'img'] }
+    : { ok: true, version: VERSION }));
 
   r.get('/api/me', (req) => {
     const u = currentUser(req);
@@ -195,8 +221,8 @@ export function createApp(config, deps = {}) {
     if (!signupOpen()) throw new HttpError(403, 'Les inscriptions sont fermées. Demandez un compte à l’administrateur.');
     const creds = validCredentials(await readJson(req));
     const user = createUser(creds, store.userCount() === 0);
-    startSession(res, user);
-    return { user: publicUser(user) };
+    const token = startSession(req, res, user);
+    return { user: publicUser(user), token };
   });
 
   r.post('/api/auth/login', async (req, res) => {
@@ -212,12 +238,12 @@ export function createApp(config, deps = {}) {
       throw new HttpError(401, 'Nom d’utilisateur ou mot de passe incorrect.');
     }
     loginAttempts.delete(ip);
-    startSession(res, user);
-    return { user: publicUser(user) };
+    const token = startSession(req, res, user);
+    return { user: publicUser(user), token };
   });
 
   r.post('/api/auth/logout', (req, res) => {
-    const sid = parseCookies(req.headers.cookie)[SESSION_COOKIE];
+    const sid = sessionId(req);
     if (sid) store.deleteSession(sid);
     res.setHeader('set-cookie', cookie(SESSION_COOKIE, '', { maxAge: 0, secure: config.https }));
     return { ok: true };
@@ -455,7 +481,7 @@ export function createApp(config, deps = {}) {
 
   const baseHeaders = (type) => ({
     'content-type': type,
-    'content-security-policy': CSP,
+    'content-security-policy': config.localMode ? CSP_LOCAL : CSP,
     'x-content-type-options': 'nosniff',
     'referrer-policy': 'same-origin',
   });
@@ -491,6 +517,21 @@ export function createApp(config, deps = {}) {
 
   async function handle(req, res) {
     const url = new URL(req.url, 'http://localhost');
+    if (url.pathname.startsWith('/api/') && req.headers.origin) {
+      // applis Android / PC (autre origine) : authentification par jeton, jamais par cookie
+      // (les cookies SameSite=Lax ne partent pas avec une requête d'un autre site)
+      res.setHeader('access-control-allow-origin', '*');
+      res.setHeader('access-control-expose-headers', 'content-length, content-range, accept-ranges');
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204, {
+          'access-control-allow-methods': 'GET, HEAD, POST, PUT, PATCH, DELETE',
+          'access-control-allow-headers': 'authorization, content-type, range, x-nexify, x-nexify-client',
+          'access-control-max-age': '86400',
+        });
+        res.end();
+        return;
+      }
+    }
     if (!url.pathname.startsWith('/api/')) {
       if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); res.end(); return; }
       serveStatic(req, res, url.pathname);

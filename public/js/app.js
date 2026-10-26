@@ -2,6 +2,7 @@
 // L'appli démarre toujours depuis les données de l'appareil ; le serveur n'est sollicité
 // que pour la première connexion, la synchronisation et la lecture en ligne.
 import { get, post, net, unauthorized, ApiError } from './api.js';
+import { native } from './native.js';
 import { h, icon, toast, popMenu, closeMenus } from './ui.js';
 import { prefs } from './prefs.js';
 import { data } from './data.js';
@@ -35,8 +36,15 @@ prefs.addEventListener('change', (e) => { if (['theme', 'showSources'].includes(
 // ================= démarrage =================
 async function boot() {
   applyTheme();
-  registerServiceWorker();
+  if (!native.isNative) registerServiceWorker();
+  await native.init();
   await Promise.all([data.load(), downloads.load()]);
+  if (native.isNative && !native.server) {
+    // appli Android / PC : adresse du serveur Nexify demandée une seule fois
+    hideSplash();
+    showServerSetup();
+    return;
+  }
   if (data.user) {
     // profil connu sur cet appareil : l'appli s'ouvre tout de suite, même sans serveur
     showShell();
@@ -89,7 +97,51 @@ function showUnreachable(e) {
     h('img.auth-logo', { src: '/icons/logo.png', alt: '' }),
     h('h1.auth-title', {}, 'Nexify'),
     h('p.auth-lede', {}, e instanceof ApiError && e.status ? e.message : 'Impossible de joindre le serveur Nexify. Une connexion est nécessaire lors de la première ouverture.'),
-    h('button.btn.primary.lg.wide', { type: 'button', onClick: () => { auth.replaceChildren(h('p.loading', {}, 'Connexion…')); boot(); } }, 'Réessayer')));
+    h('button.btn.primary.lg.wide', { type: 'button', onClick: () => { auth.replaceChildren(h('p.loading', {}, 'Connexion…')); boot(); } }, 'Réessayer'),
+    native.isNative ? h('p.auth-switch', {}, `Serveur : ${native.server} `, h('button.link', { type: 'button', onClick: () => showServerSetup() }, 'Modifier')) : null));
+}
+
+// Appli Android / PC : adresse du serveur Nexify (connexion et synchronisation uniquement)
+function showServerSetup() {
+  const auth = $('#auth');
+  auth.hidden = false;
+  $('#shell').hidden = true;
+  const err = h('p.error', { role: 'alert' });
+  const input = h('input', { type: 'text', name: 'server', value: native.server, placeholder: 'https://musique.mondomaine.fr', required: true, autocapitalize: 'none', autocorrect: 'off', spellcheck: 'false', inputmode: 'url' });
+  const form = h('form.auth-form', {
+    onSubmit: async (e) => {
+      e.preventDefault();
+      let url = input.value.trim().replace(/\/+$/, '');
+      if (!/^https?:\/\//i.test(url)) url = `http://${url}`;
+      const btn = form.querySelector('button[type=submit]');
+      btn.disabled = true;
+      err.textContent = '';
+      try {
+        const ac = new AbortController();
+        setTimeout(() => ac.abort(), 8000);
+        const r = await fetch(`${url}/api/health`, { signal: ac.signal, cache: 'no-store' });
+        const body = await r.json();
+        if (!body.ok) throw new Error();
+        native.setServer(url);
+        net.check();
+        auth.replaceChildren(h('p.loading', {}, 'Connexion…'));
+        boot();
+      } catch {
+        err.textContent = 'Aucun serveur Nexify ne répond à cette adresse. Vérifiez l’adresse et que l’appareil est sur le bon réseau.';
+        btn.disabled = false;
+      }
+    },
+  },
+  h('label.field', {}, h('span', {}, 'Adresse du serveur Nexify'), input),
+  h('p.hint', {}, 'Le serveur ne sert qu’à la connexion et à la synchronisation de vos playlists et titres « J’aime ». La musique est récupérée directement par cet appareil.'),
+  err,
+  h('button.btn.primary.lg.wide', { type: 'submit' }, 'Continuer'));
+  auth.replaceChildren(h('div.auth-card', {},
+    h('img.auth-logo', { src: '/icons/logo.png', alt: '' }),
+    h('h1.auth-title', {}, 'Bienvenue sur Nexify'),
+    h('p.auth-lede', {}, 'Indiquez l’adresse de votre serveur pour vous connecter.'),
+    form));
+  input.focus();
 }
 
 function sessionExpired() {
@@ -115,6 +167,7 @@ function showAuth(reconnect = false) {
         try {
           const r = await post(mode === 'signup' ? '/api/auth/signup' : '/api/auth/login', { username: fd.get('username'), password: fd.get('password') });
           data.meta.firstRun = false;
+          if (r.token) native.setToken(r.token);
           await data.setUser(r.user, data.meta);
           btn.textContent = 'Synchronisation…';
           await data.sync();

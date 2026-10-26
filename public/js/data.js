@@ -3,8 +3,9 @@
 //  - historique d'écoute et collections récemment ouvertes : propres à l'appareil ;
 //  - bibliothèque des services (Spotify, Deezer, YouTube Music) : copie gardée pour le mode hors ligne.
 import { db } from './db.js';
-import { net, get, post } from './api.js';
+import { net, get, post, music } from './api.js';
 import { mergeUserData, emptyUserData } from './merge.js';
+import { native } from './native.js';
 
 const HISTORY_MAX = 400;
 const RECENT_MAX = 30;
@@ -230,9 +231,9 @@ class Data extends EventTarget {
   async collection(source, id, { refresh = false } = {}) {
     const key = `${source}:${id}`;
     const cached = await db.get('collections', key);
-    if (cached && (!refresh || !net.online)) return { ...cached.collection, cachedAt: cached.at };
+    if (cached && (!refresh || (!net.online && !native.has('collection')))) return { ...cached.collection, cachedAt: cached.at };
     try {
-      const { collection } = await get(`/api/collection/${source}/${encodeURIComponent(id)}`, { timeout: 90_000 });
+      const { collection } = await music(`/api/collection/${source}/${encodeURIComponent(id)}`, { timeout: 90_000 });
       await db.put('collections', { collection, at: Date.now() }, key);
       return collection;
     } catch (e) {
