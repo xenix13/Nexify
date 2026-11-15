@@ -321,6 +321,7 @@ button.card-art { display: block; width: 100%; }
 .card.wide .card-art { aspect-ratio: 16 / 9; }
 .shelf-thumb { width: 44px !important; height: 44px !important; border-radius: 50% !important; align-self: center; }
 .mood-chips { padding-top: 0; margin-bottom: 8px; }
+.chip .chip-x { width: 16px; height: 16px; margin-right: -4px; }
 .shelf.skeleton .shelf-row > div { aspect-ratio: 1; border-radius: var(--r-sm); background: var(--surface-2); animation: pulse 1.4s ease-in-out infinite; }
 
 .quick {

@@ -233,6 +233,13 @@ function wireShell() {
     }, 550);
   });
   $('#side-new').addEventListener('click', newPlaylist);
+  // « Accueil » quand on y est déjà : le lien ne change pas l'adresse, on prévient la vue
+  document.addEventListener('click', (e) => {
+    const link = e.target.closest('a[data-nav="home"], a.brand');
+    if (!link) return;
+    const here = location.hash.replace(/^#\/?/, '') === '';
+    if (here) { e.preventDefault(); window.dispatchEvent(new Event('nexify:home')); }
+  });
   $('#avatar').addEventListener('click', (e) => accountMenu(e.currentTarget));
 
   const pill = $('#net-pill');

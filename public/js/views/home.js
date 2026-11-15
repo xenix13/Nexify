@@ -48,25 +48,39 @@ function feedCard(item, shelfTitle) {
   };
 }
 
+// Chaque étagère est rendue séparément : un contenu inattendu (podcasts, épisodes…) est
+// simplement ignoré au lieu de bloquer tout l'accueil.
 function feedShelves(feed) {
-  return feed.shelves.map((sh) => {
-    const opts = { kicker: sh.strapline || null, thumb: sh.strapline ? sh.thumb : null };
-    if (sh.layout === 'list') {
-      const tracks = sh.items.map((i) => i.track);
-      const list = trackList(tracks, { label: sh.title, context: { kind: 'mix', name: sh.title } });
-      list.classList.add('quick');
-      return shelf(sh.title, list, opts);
+  const out = [];
+  for (const sh of feed?.shelves || []) {
+    try {
+      const items = (sh.items || []).filter((i) => i && (i.type !== 'song' || i.track?.key));
+      if (!items.length) continue;
+      const opts = { kicker: sh.strapline || null, thumb: sh.strapline ? sh.thumb : null };
+      const songs = items.filter((i) => i.type === 'song');
+      if (sh.layout === 'list' && songs.length === items.length) {
+        const list = trackList(songs.map((i) => i.track), { label: sh.title, context: { kind: 'mix', name: sh.title } });
+        list.classList.add('quick');
+        out.push(shelf(sh.title, list, opts));
+      } else {
+        out.push(shelf(sh.title, cardRow(items.map((i) => feedCard(i, sh.title)), sh.layout === 'wide'), opts));
+      }
+    } catch (e) {
+      console.warn('[nexify] étagère ignorée', sh?.title, e);
     }
-    return shelf(sh.title, cardRow(sh.items.map((i) => feedCard(i, sh.title)), sh.layout === 'wide'), opts);
-  });
+  }
+  return out;
 }
 
 export function viewHome(ctx) {
   // filtre d'ambiance choisi : { title, params, browseId } ou null (accueil général)
-  let mood = store.get('homeMood', null);
-  if (!mood || typeof mood !== 'object') mood = null;
+  // le filtre n'est pas gardé d'une ouverture à l'autre : l'appli s'ouvre toujours sur l'accueil complet
+  let mood = null;
+  store.remove('homeMood');
   let feed = null;
-  let baseChips = []; // filtres de l'accueil général, toujours affichés pour pouvoir changer ou revenir
+  let baseChips = store.get('homeChips', []); // filtres de l'accueil général, toujours affichés pour pouvoir changer ou revenir
+  if (!Array.isArray(baseChips)) baseChips = [];
+  const keepChips = (chips) => { baseChips = chips; store.set('homeChips', chips); };
   let feedLoading = false;
   let feedError = '';
   const feedKey = (m) => `home:${m ? `${m.browseId}:${m.params}` : 'FEmusic_home:'}`;
@@ -98,12 +112,12 @@ export function viewHome(ctx) {
     feedLoading = !cached && (net.online || native.has('home'));
     draw();
     // filtres de l'accueil général (pour pouvoir changer de filtre ou revenir)
-    if (m) fetchFeed(null, false).then(({ data }) => { if (data?.chips?.length && ctx.alive()) { baseChips = data.chips; draw(); } }).catch(() => {});
+    if (m) fetchFeed(null, false).then(({ data }) => { if (data?.chips?.length && ctx.alive()) { keepChips(data.chips); draw(); } }).catch(() => {});
     try {
       const { data } = await fetchFeed(m, refresh);
       if (!ctx.alive() || feedKey(mood) !== key) return;
       if (data) feed = data;
-      if (!m && data?.chips?.length) baseChips = data.chips;
+      if (!m && data?.chips?.length) keepChips(data.chips);
     } catch (e) {
       if (feedKey(mood) === key) feedError = e.message;
     }
@@ -111,21 +125,43 @@ export function viewHome(ctx) {
     if (ctx.alive() && feedKey(mood) === key) draw();
   }
 
+  function selectMood(m) {
+    mood = m;
+    ctx.view.scrollTop = 0;
+    loadFeed();
+  }
+  // « Accueil » (menu ou logo) touché alors qu'on est déjà sur l'accueil : retour à l'accueil complet
+  ctx.on(window, 'nexify:home', () => { if (mood) selectMood(null); else ctx.view.scrollTo({ top: 0, behavior: 'smooth' }); });
+
   const moodChips = () => {
     const chips = baseChips.length ? baseChips : (!mood ? feed?.chips || [] : []);
     if (!chips.length && !mood) return null;
-    const select = (m) => { mood = m; store.set('homeMood', m); ctx.view.scrollTop = 0; loadFeed(); };
     return h('div.chips.mood-chips', { role: 'group', 'aria-label': 'Ambiances' },
-      h('button.chip', { type: 'button', 'aria-pressed': String(!mood), onClick: () => { if (mood) select(null); } }, 'Tout'),
-      chips.map((c) => h('button.chip', {
-        type: 'button',
-        'aria-pressed': String(mood?.title === c.title),
-        onClick: () => select(mood?.title === c.title ? null : { title: c.title, params: c.params, browseId: c.browseId }),
-      }, c.title)));
+      h('button.chip', { type: 'button', 'aria-pressed': String(!mood), onClick: () => { if (mood) selectMood(null); } }, 'Tout'),
+      chips.map((c) => {
+        const on = mood?.title === c.title;
+        return h('button.chip', {
+          type: 'button',
+          'aria-pressed': String(on),
+          title: on ? 'Retirer le filtre' : null,
+          onClick: () => selectMood(on ? null : { title: c.title, params: c.params, browseId: c.browseId }),
+        }, c.title, on ? icon('close', 'chip-x') : null);
+      }));
   };
 
   const draw = () => {
     if (!ctx.alive()) return;
+    try {
+      drawPage();
+    } catch (e) {
+      console.error('[nexify] accueil', e);
+      ctx.view.replaceChildren(h('div.page', {}, moodChips() || '',
+        h('div.empty', {}, h('p.empty-title', {}, 'Impossible d’afficher cette page'),
+          h('button.btn', { type: 'button', onClick: () => selectMood(null) }, 'Revenir à l’accueil'))));
+    }
+  };
+
+  const drawPage = () => {
     const top = data.topTracks(20);
     const recent = data.recent.slice(0, 16);
     const pls = data.playlists();
@@ -142,7 +178,7 @@ export function viewHome(ctx) {
       if (mood && !hasFeed && !feedLoading && !feedError) {
         blocks.push(h('div.empty', {}, h('p.empty-title', {}, `Aucun contenu disponible pour « ${mood.title} »`),
           h('p.muted', {}, net.online ? 'Ce filtre ne propose pas encore de contenu lisible dans Nexify.' : 'Ce filtre n’a pas été enregistré pour une utilisation hors connexion.'),
-          h('button.btn', { type: 'button', onClick: () => { mood = null; store.set('homeMood', null); loadFeed(); } }, 'Revenir à l’accueil')));
+          h('button.btn', { type: 'button', onClick: () => selectMood(null) }, 'Revenir à l’accueil')));
       }
     } else {
       blocks.push(h('h1.page-title', {}, `${greeting()}${data.user ? `, ${data.user.username}` : ''}`));
