@@ -1,5 +1,6 @@
 // Appels à l'API Nexify et suivi de la connexion au serveur.
 import { native } from './native.js';
+import { localHandler } from './ytm-local.js';
 export class ApiError extends Error {
   constructor(message, status, data) {
     super(message);
@@ -120,15 +121,19 @@ export function mediaUrl(path) {
 // Fonctions musicales (recherche, accueil, radio, playlists publiques) : le serveur s'il
 // répond, sinon le moteur de l'appli (PC / Android), qui n'a besoin que d'Internet.
 const FEATURE = [[/^\/api\/search/, 'search'], [/^\/api\/home/, 'home'], [/^\/api\/radio/, 'radio'], [/^\/api\/collection\/ytm\//, 'collection'], [/^\/api\/resolve/, 'resolve']];
+// Une fonction musicale est-elle utilisable maintenant (serveur, ou appareil seul) ?
+export const musicAvailable = (feature) => net.online || native.has(feature) || native.has('innertube');
+
 export async function music(path, opts = {}) {
   const feature = FEATURE.find(([re]) => re.test(path))?.[1];
-  const local = feature && native.has(feature);
-  if (net.online || !local) {
+  // sur l'appareil : moteur complet (PC) ou logique YouTube Music partagée (Android)
+  const onDevice = localHandler(path) || (feature && native.has(feature) ? () => native.engineJson(path, opts) : null);
+  if (net.online || !onDevice) {
     try {
       return await api(path, opts);
     } catch (e) {
-      if (!(local && e.status === 0)) throw e;
+      if (!(onDevice && e.status === 0)) throw e;
     }
   }
-  return native.engineJson(path, opts);
+  return onDevice(opts);
 }

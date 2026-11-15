@@ -1,6 +1,6 @@
 // Pages de collection : playlist d'un service, playlist Nexify, titres « J'aime ».
 import { h, icon, iconButton, SOURCE_NAMES, plural, fmtTotal, fmtAgo, toast, popMenu, confirmDialog, promptDialog } from '../ui.js';
-import { net, post } from '../api.js';
+import { net, post, musicAvailable } from '../api.js';
 import { data } from '../data.js';
 import { player } from '../player.js';
 import { trackList, collectionHead, playButtons, downloadButton, errorBlock, loading, go, downloadTracks } from '../components.js';
@@ -72,7 +72,7 @@ export async function viewCollection(ctx, source, id) {
   }
   await load(false);
   // version enregistrée affichée tout de suite ; mise à jour en arrière-plan si le serveur répond
-  if (col?.cachedAt && net.online) load(true);
+  if (col?.cachedAt && (net.online || (source === 'ytm' && musicAvailable('collection')))) load(true);
 }
 
 // ---------- playlist Nexify (modifiable hors ligne)

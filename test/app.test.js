@@ -318,6 +318,19 @@ test('synchronisation : playlists et « J’aime » fusionnés entre appareils, 
   // suppression
   r = await admin('POST', '/api/sync', { playlists: { mixMix0001: { id: 'mixMix0001', deleted: true, updatedAt: t0 + 6000 } } });
   assert.equal(r.data.data.playlists.mixMix0001.deleted, true);
+  // réglages synchronisés (noms et tailles contrôlés)
+  r = await admin('POST', '/api/sync', { settings: {
+    eq: { value: { enabled: true, preset: 'rock', preamp: -2, gains: [5, 4, 2, -1, -2, -1, 2, 3, 4, 4] }, updatedAt: t0 },
+    theme: { value: 'light', updatedAt: t0 },
+    'mauvais nom': { value: 1, updatedAt: t0 },
+    enorme: { value: 'x'.repeat(5000), updatedAt: t0 },
+  } });
+  assert.equal(r.data.data.settings.eq.value.preset, 'rock');
+  assert.equal(r.data.data.settings.theme.value, 'light');
+  assert.equal(r.data.data.settings['mauvais nom'], undefined);
+  assert.equal(r.data.data.settings.enorme, undefined);
+  r = await admin('POST', '/api/sync', { settings: { theme: { value: 'dark', updatedAt: t0 - 1000 } } });
+  assert.equal(r.data.data.settings.theme.value, 'light', 'un réglage plus ancien ne remplace pas le récent');
   // les données sont propres à chaque utilisateur
   r = await guest('GET', '/api/sync');
   assert.deepEqual(r.data.data.playlists, {});

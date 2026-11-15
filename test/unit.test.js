@@ -221,3 +221,13 @@ test('YouTube Music : accueil (filtres, sélection rapide, cartes, albums, artis
   assert.equal(news.layout, 'cards');
   assert.deepEqual(news.items.map((i) => `${i.type}:${i.id}`), ['playlist:RDTMAK5uy_mix', 'playlist:LM', 'album:MPREb_album01', 'artist:UCartist0001']);
 });
+
+test('fusion des réglages entre appareils : réglage par réglage, le plus récent gagne', () => {
+  const now = Date.now();
+  const phone = { playlists: {}, likes: {}, settings: { theme: { value: 'light', updatedAt: now - 10 }, crossfade: { value: 6, updatedAt: now - 500 } } };
+  const pc = { playlists: {}, likes: {}, settings: { theme: { value: 'dark', updatedAt: now - 100 }, crossfade: { value: 2, updatedAt: now - 5 } } };
+  const m = mergeUserData(pc, phone, now);
+  assert.equal(m.settings.theme.value, 'light');
+  assert.equal(m.settings.crossfade.value, 2);
+  assert.deepEqual(mergeUserData({ playlists: {}, likes: {} }, phone, now).settings, phone.settings, 'anciennes données sans réglages');
+});

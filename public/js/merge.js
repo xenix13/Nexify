@@ -7,11 +7,12 @@
 // {
 //   playlists: { [id]: { id, name, tracks: [track], createdAt, updatedAt, deleted? } },
 //   likes:     { [trackKey]: { key, track, at, updatedAt, removed? } },
+//   settings:  { [nom]: { value, updatedAt } },   réglages de l'appli (thème, égaliseur…)
 // }
 
 export const TOMBSTONE_TTL = 120 * 86_400_000;
 
-export const emptyUserData = () => ({ playlists: {}, likes: {} });
+export const emptyUserData = () => ({ playlists: {}, likes: {}, settings: {} });
 
 function mergeMap(a = {}, b = {}, isDead, now) {
   const out = {};
@@ -35,5 +36,6 @@ export function mergeUserData(a, b, now = Date.now()) {
   return {
     playlists: mergeMap(a.playlists, b.playlists, (p) => p.deleted, now),
     likes: mergeMap(a.likes, b.likes, (l) => l.removed, now),
+    settings: mergeMap(a.settings, b.settings, () => false, now),
   };
 }

@@ -5,6 +5,7 @@
 import { db } from './db.js';
 import { net, get, post, music } from './api.js';
 import { mergeUserData, emptyUserData } from './merge.js';
+import { prefs, DEVICE_ONLY } from './prefs.js';
 import { native } from './native.js';
 
 const HISTORY_MAX = 400;
@@ -36,6 +37,14 @@ class Data extends EventTarget {
     this._saveTimer = null;
     this._syncTimer = null;
     net.addEventListener('change', () => { if (net.online) this.sync(); });
+    // réglages modifiés sur cet appareil : synchronisés avec les autres
+    prefs.addEventListener('change', (e) => {
+      const { key, value, fromSync } = e.detail;
+      if (fromSync || DEVICE_ONLY.has(key) || !this.user) return;
+      const now = Math.max(Date.now(), (this.ud.settings?.[key]?.updatedAt || 0) + 1);
+      this.ud.settings = { ...(this.ud.settings || {}), [key]: { value, updatedAt: now } };
+      this._changed();
+    });
     setInterval(() => { if (net.online && document.visibilityState === 'visible') this.sync(); }, 5 * 60_000);
   }
 
@@ -48,7 +57,7 @@ class Data extends EventTarget {
     ]);
     this.user = user || null;
     this.meta = meta || {};
-    this.ud = ud || emptyUserData();
+    this.ud = { ...emptyUserData(), ...(ud || {}) };
     this.history = history || [];
     this.recent = recent || [];
     this.library = library || null;
@@ -98,6 +107,14 @@ class Data extends EventTarget {
       const { data } = await post('/api/sync', sent, { timeout: 60_000 });
       // des modifications ont pu arriver pendant l'envoi : on refusionne avec l'état local actuel
       this.ud = mergeUserData(this.ud, data);
+      this.applySettings();
+      // compte sans réglages synchronisés : cet appareil publie les siens (priorité minimale)
+      if (!Object.keys(this.ud.settings || {}).length) {
+        const seed = {};
+        for (const [key, value] of Object.entries(prefs.values)) if (!DEVICE_ONLY.has(key)) seed[key] = { value, updatedAt: 1 };
+        this.ud.settings = seed;
+        this._changed();
+      }
       this.lastSync = Date.now();
       this.syncError = '';
       await db.put('kv', this.ud, 'userdata');
@@ -110,6 +127,14 @@ class Data extends EventTarget {
     } finally {
       this.syncing = false;
       this.emit('sync');
+    }
+  }
+
+  // Réglages reçus des autres appareils (le plus récent l'emporte, réglage par réglage)
+  applySettings() {
+    for (const [key, entry] of Object.entries(this.ud.settings || {})) {
+      if (DEVICE_ONLY.has(key) || !entry || !(key in prefs.values)) continue;
+      if (JSON.stringify(prefs.get(key)) !== JSON.stringify(entry.value)) prefs.set(key, entry.value, { fromSync: true });
     }
   }
 
@@ -231,7 +256,7 @@ class Data extends EventTarget {
   async collection(source, id, { refresh = false } = {}) {
     const key = `${source}:${id}`;
     const cached = await db.get('collections', key);
-    if (cached && (!refresh || (!net.online && !native.has('collection')))) return { ...cached.collection, cachedAt: cached.at };
+    if (cached && (!refresh || (!net.online && !native.has('collection') && !native.has('innertube')))) return { ...cached.collection, cachedAt: cached.at };
     try {
       const { collection } = await music(`/api/collection/${source}/${encodeURIComponent(id)}`, { timeout: 90_000 });
       await db.put('collections', { collection, at: Date.now() }, key);

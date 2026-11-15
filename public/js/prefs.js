@@ -39,10 +39,11 @@ class Prefs extends EventTarget {
     this.values.eq = { ...DEFAULTS.eq, ...(this.values.eq || {}) };
   }
   get(key) { return this.values[key]; }
-  set(key, value) {
+  // fromSync : valeur reçue d'un autre appareil (ne repart pas en synchronisation)
+  set(key, value, { fromSync = false } = {}) {
     this.values[key] = value;
     store.set('prefs', this.values);
-    this.dispatchEvent(new CustomEvent('change', { detail: { key, value } }));
+    this.dispatchEvent(new CustomEvent('change', { detail: { key, value, fromSync } }));
   }
   reset() {
     this.values = structuredClone(DEFAULTS);
@@ -50,5 +51,8 @@ class Prefs extends EventTarget {
     for (const key of Object.keys(DEFAULTS)) this.dispatchEvent(new CustomEvent('change', { detail: { key, value: this.values[key] } }));
   }
 }
+
+// Réglages propres à l'appareil (jamais synchronisés)
+export const DEVICE_ONLY = new Set(['processing']);
 
 export const prefs = new Prefs();

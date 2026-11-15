@@ -1,6 +1,6 @@
 // Accueil : étagères construites à partir des données gardées sur l'appareil.
 import { h, icon, plural, SOURCE_NAMES, toast } from '../ui.js';
-import { net, music, store } from '../api.js';
+import { net, music, musicAvailable, store } from '../api.js';
 import { native } from '../native.js';
 import { db } from '../db.js';
 import { data } from '../data.js';
@@ -89,7 +89,7 @@ export function viewHome(ctx) {
   async function fetchFeed(m, refresh) {
     const key = feedKey(m);
     const cached = await db.get('kv', key).catch(() => null);
-    const reachable = net.online || native.has('home');
+    const reachable = musicAvailable('home');
     if (cached && (!reachable || (!refresh && Date.now() - cached.at < 15 * 60_000))) return { data: cached, fresh: false };
     if (!reachable) return { data: null, fresh: false };
     try {
@@ -109,7 +109,7 @@ export function viewHome(ctx) {
     if (!ctx.alive() || feedKey(mood) !== key) return;
     feed = cached;
     feedError = '';
-    feedLoading = !cached && (net.online || native.has('home'));
+    feedLoading = !cached && musicAvailable('home');
     draw();
     // filtres de l'accueil général (pour pouvoir changer de filtre ou revenir)
     if (m) fetchFeed(null, false).then(({ data }) => { if (data?.chips?.length && ctx.alive()) { keepChips(data.chips); draw(); } }).catch(() => {});
@@ -184,7 +184,7 @@ export function viewHome(ctx) {
       blocks.push(h('h1.page-title', {}, `${greeting()}${data.user ? `, ${data.user.username}` : ''}`));
     }
 
-    if (!net.online) {
+    if (!net.online && !native.isNative) {
       blocks.push(h('div.notice', {}, icon('offline'), h('p', {}, dls.length
         ? `Vous êtes hors connexion. ${plural(dls.length, 'titre téléchargé', 'titres téléchargés')} restent disponibles.`
         : 'Vous êtes hors connexion. Téléchargez des titres pour les écouter sans connexion.'),
@@ -195,7 +195,7 @@ export function viewHome(ctx) {
       blocks.push(h('section.shelf.skeleton', {}, h('header.shelf-head', {}, h('h2.section-title', {}, 'Chargement de votre accueil…')), h('div.shelf-row', {}, Array.from({ length: 6 }, () => h('div')))));
     }
     if (hasFeed) blocks.push(...feedShelves(feed));
-    if (feedError && !hasFeed && net.online) blocks.push(h('div.notice', {}, h('p', {}, `Accueil YouTube Music indisponible : ${feedError}`), h('button.btn', { type: 'button', onClick: () => loadFeed(true) }, 'Réessayer')));
+    if (feedError && !hasFeed && musicAvailable('home')) blocks.push(h('div.notice', {}, h('p', {}, `Accueil YouTube Music indisponible : ${feedError}`), h('button.btn', { type: 'button', onClick: () => loadFeed(true) }, 'Réessayer')));
 
     if (!hasFeed && !feedLoading && !top.length && !pls.length && !liked.length) {
       blocks.push(h('section.hero', {},
@@ -261,7 +261,7 @@ export function viewHome(ctx) {
   draw();
   loadFeed();
   ctx.on(data, 'library', draw);
-  ctx.on(net, 'change', () => { draw(); if (net.online) loadFeed(); });
+  ctx.on(net, 'change', () => { draw(); if (musicAvailable('home')) loadFeed(); });
   if (net.online && (!data.library || Date.now() - data.library.at > 10 * 60_000)) data.refreshLibrary().catch(() => {});
 }
 

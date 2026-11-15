@@ -61,15 +61,18 @@ Les mises à jour du serveur sont détectées automatiquement : l’application 
 
 En plus de l’appli web, Nexify existe en application pour **Android**, **Windows**, **Linux** et **macOS**. L’interface est la même, mais l’appareil récupère lui-même la musique sur YouTube Music : le serveur ne sert plus qu’à la connexion et à la synchronisation des playlists et titres « J’aime ».
 
-| | Appli web (PWA) | Applis Android et PC |
+| Serveur coupé, Internet actif | Appli web (PWA) | Applis Android et PC |
 |---|---|---|
-| Lecture et téléchargement | via le serveur | **par l’appareil** (serveur en secours) |
-| Recherche, accueil | via le serveur | serveur s’il répond, sinon **par l’appareil** |
-| Serveur éteint ou injoignable | titres téléchargés uniquement | **tout fonctionne** (seule la synchronisation attend) |
+| Recherche, accueil YouTube Music et filtres, radio | ❌ | ✅ par l’appareil |
+| Lecture et téléchargement (YouTube Music, Spotify, Deezer) | titres téléchargés uniquement | ✅ par l’appareil |
+| Playlists YouTube Music publiques, albums, mix | dernière version enregistrée | ✅ par l’appareil |
+| Playlists, « J’aime », réglages | ✅ modifiables, synchronisés au retour du serveur | ✅ modifiables, synchronisés au retour du serveur |
 | Certificat HTTPS reconnu | obligatoire | inutile : `http://IP:8443` suffit sur le réseau local |
 
+Le serveur reste nécessaire pour la **première connexion**, la **synchronisation** entre appareils (playlists, « J’aime », réglages : thème, égaliseur, fondu…), et ce qui dépend des comptes connectés sur le serveur : bibliothèques Spotify / Deezer / YouTube Music et accueil YouTube Music **personnalisé** (sans le serveur, l’accueil est celui de YouTube Music sans compte).
+
 - **PC (Electron)** : l’appli embarque le moteur Nexify et télécharge au premier lancement **yt-dlp** et **Deno** (tenus à jour automatiquement). Recherche, accueil, radio et lecture se font sur l’ordinateur.
-- **Android (Capacitor)** : un module natif basé sur **NewPipeExtractor** (le moteur de l’appli NewPipe) fournit la recherche et le flux audio. Une notification « Lecture en cours » permet de continuer écran éteint. Les titres Spotify et Deezer sont mis en correspondance par le serveur, puis lus depuis le téléphone.
+- **Android (Capacitor)** : un module natif basé sur **NewPipeExtractor** (le moteur de l’appli NewPipe) fournit le flux audio, et relaie les requêtes vers YouTube Music : accueil, radio, playlists, albums et correspondance des titres Spotify / Deezer sont calculés sur le téléphone, avec le même code que le serveur (`public/js/shared`). Une notification « Lecture en cours » permet de continuer écran éteint.
 - **iPhone / iPad** : pas d’appli (il faudrait un compte développeur Apple) ; utilisez l’appli web.
 
 ### Télécharger les applis
@@ -161,6 +164,8 @@ public/
   js/player.js        file d’attente, préchargement, fondu enchaîné, radio, Spotify
   js/native.js        applis Android / PC : adresse du serveur, jeton, moteur local
   js/source.js        d'où lire un titre (appareil d'abord, serveur en secours)
+  js/ytm-local.js     Android : YouTube Music depuis le téléphone (accueil, radio, playlists, correspondances)
+  js/shared/          code commun serveur / appli : YouTube Music, correspondance, modèle de titre
   js/views/           accueil, recherche, bibliothèque, collections, paramètres, lecteur
 deploy/               install.sh et services systemd
 desktop/              appli PC (Electron) : moteur local, yt-dlp et Deno téléchargés au premier lancement

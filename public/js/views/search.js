@@ -1,6 +1,6 @@
 // Recherche : YouTube Music, Spotify et Deezer en même temps ; dans la bibliothèque locale hors connexion.
 import { h, icon, sourceMark, SOURCE_NAMES, plural, toast } from '../ui.js';
-import { net, get, music, store } from '../api.js';
+import { net, get, music, musicAvailable, store } from '../api.js';
 import { native } from '../native.js';
 import { data } from '../data.js';
 import { downloads } from '../downloads.js';
@@ -54,7 +54,7 @@ export function viewSearch(ctx) {
     current = '';
     results.replaceChildren(h('div.empty', {}, icon('search'),
       h('p.empty-title', {}, 'Que voulez-vous écouter ?'),
-      h('p.muted', {}, net.online
+      h('p.muted', {}, musicAvailable('search')
         ? 'Les résultats de YouTube Music, Spotify et Deezer s’affichent ensemble. Chaque titre est lu en version complète dès qu’elle est disponible.'
         : 'Hors connexion, la recherche porte sur vos playlists, vos titres « J’aime » et vos téléchargements.')));
     if (narrow) input.focus();
@@ -62,7 +62,7 @@ export function viewSearch(ctx) {
 
   async function run(query) {
     current = query;
-    if (filter === 'local' || (!net.online && !native.has('search'))) { showLocal(query, !net.online && filter !== 'local'); return; }
+    if (filter === 'local' || !musicAvailable('search')) { showLocal(query, !net.online && filter !== 'local'); return; }
     const sources = filter === 'all' ? ALL : [filter];
     results.replaceChildren(loading('Recherche en cours…'));
     let res;

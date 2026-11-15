@@ -1,6 +1,6 @@
 // Composants partagés : listes de titres, menus d'actions, cartes, étagères, en-têtes.
 import { h, icon, iconButton, setIcon, sourceMark, SOURCE_NAMES, fmtTime, plural, artwork, specialArt, toast, modal, popMenu } from './ui.js';
-import { net } from './api.js';
+import { net, musicAvailable } from './api.js';
 import { playableWithoutServer } from './source.js';
 import { player } from './player.js';
 import { data } from './data.js';
@@ -99,7 +99,7 @@ export function trackMenu(anchor, t, i, opts = {}) {
   const st = downloads.state(t.key);
   const liked = data.isLiked(t.key);
   popMenu(anchor, [
-    { icon: 'radio', label: 'Démarrer la radio', action: () => { if (!net.online) { toast('La radio nécessite une connexion au serveur.', 'error'); return; } player.startRadio(t); } },
+    { icon: 'radio', label: 'Démarrer la radio', action: () => { if (!musicAvailable('radio')) { toast('La radio nécessite une connexion.', 'error'); return; } player.startRadio(t); } },
     { icon: 'next', label: 'Lire ensuite', action: () => { player.enqueue(t, true); toast('Ce titre sera lu juste après'); } },
     { icon: 'queue', label: 'Ajouter à la file d’attente', action: () => { player.enqueue(t); toast('Ajouté à la file d’attente'); } },
     '-',

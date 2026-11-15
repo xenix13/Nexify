@@ -1,5 +1,6 @@
 package fr.nexify.app;
 
+import java.io.DataInputStream;
 import java.io.InputStream;
 import java.util.Collections;
 import java.util.List;
@@ -10,7 +11,9 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import fi.iki.elonen.NanoHTTPD;
+import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
+import okhttp3.RequestBody;
 import okhttp3.ResponseBody;
 
 import org.json.JSONArray;
@@ -37,9 +40,16 @@ import org.schabi.newpipe.extractor.stream.StreamInfoItem;
  *   GET /api/health
  *   GET /api/ytm/stream/{videoId}      (requêtes partielles « Range » : avance rapide)
  *   GET /api/search?q=...              ({ results: { ytm: { tracks } } })
+ *   POST /api/innertube/{search|browse|next}
+ *        relais vers l'API de YouTube Music : l'interface (code partagé avec le serveur)
+ *        en tire l'accueil, la radio, les playlists, albums et correspondances, sans serveur.
  */
 public final class Engine extends NanoHTTPD {
     private static final Pattern STREAM = Pattern.compile("^/api/ytm/stream/([A-Za-z0-9_-]{11})$");
+    private static final Pattern INNERTUBE = Pattern.compile("^/api/innertube/(search|browse|next)$");
+    private static final String YTM = "https://music.youtube.com";
+    private static final MediaType JSON = MediaType.parse("application/json");
+    private static final int MAX_BODY = 512 * 1024;
     private static final Pattern VIDEO_ID = Pattern.compile("[?&]v=([A-Za-z0-9_-]{11})");
     private static final long URL_TTL = TimeUnit.HOURS.toMillis(4);
 
@@ -94,10 +104,14 @@ public final class Engine extends NanoHTTPD {
                 o.put("ok", true);
                 o.put("engine", "android");
                 o.put("version", version);
-                o.put("features", new JSONArray().put("stream").put("search"));
+                o.put("features", new JSONArray().put("stream").put("search").put("innertube"));
                 r = json(200, o);
             } else if (m.matches()) {
                 r = stream(m.group(1), session.getHeaders().get("range"), true);
+            } else if (session.getMethod() == Method.POST && INNERTUBE.matcher(uri).matches()) {
+                final Matcher it = INNERTUBE.matcher(uri);
+                it.matches();
+                r = innertube(it.group(1), session);
             } else if ("/api/search".equals(uri)) {
                 final List<String> q = session.getParameters().get("q");
                 r = search(q == null || q.isEmpty() ? "" : q.get(0));
@@ -108,7 +122,7 @@ public final class Engine extends NanoHTTPD {
             r = error(502, "Lecture impossible : " + e.getMessage());
         }
         r.addHeader("Access-Control-Allow-Origin", "*");
-        r.addHeader("Access-Control-Allow-Headers", "authorization, content-type, range, x-nexify, x-nexify-client");
+        r.addHeader("Access-Control-Allow-Headers", "authorization, content-type, range, x-nexify, x-nexify-client, x-ytm-client-version");
         r.addHeader("Access-Control-Allow-Methods", "GET, HEAD, POST, OPTIONS");
         r.addHeader("Access-Control-Expose-Headers", "content-length, content-range, accept-ranges");
         return r;
@@ -177,6 +191,34 @@ public final class Engine extends NanoHTTPD {
             r.addHeader("Content-Range", cr);
         }
         return r;
+    }
+
+    // ---------- relais InnerTube (YouTube Music), sans cookies : résultats non personnalisés
+    private Response innertube(final String endpoint, final IHTTPSession session) throws Exception {
+        final String lenHeader = session.getHeaders().get("content-length");
+        final int len = lenHeader == null ? 0 : Integer.parseInt(lenHeader.trim());
+        if (len <= 0 || len > MAX_BODY) {
+            return error(400, "Requête invalide");
+        }
+        final byte[] body = new byte[len];
+        new DataInputStream(session.getInputStream()).readFully(body);
+        final String version = session.getHeaders().get("x-ytm-client-version");
+        final okhttp3.Request req = new okhttp3.Request.Builder()
+                .url(YTM + "/youtubei/v1/" + endpoint + "?prettyPrint=false")
+                .post(RequestBody.create(body, JSON))
+                .addHeader("Origin", YTM)
+                .addHeader("X-Origin", YTM)
+                .addHeader("Referer", YTM + "/")
+                .addHeader("User-Agent", NpeDownloader.USER_AGENT)
+                .addHeader("X-YouTube-Client-Name", "67")
+                .addHeader("X-YouTube-Client-Version", version != null ? version : "1.20251020.01.00")
+                .build();
+        try (okhttp3.Response up = http.newCall(req).execute()) {
+            final ResponseBody rb = up.body();
+            final String text = rb != null ? rb.string() : "{}";
+            return newFixedLengthResponse(new Status(up.code(), up.isSuccessful() ? "OK" : "Error"),
+                    "application/json; charset=utf-8", text);
+        }
     }
 
     // ---------- recherche YouTube Music (titres)

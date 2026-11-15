@@ -3,7 +3,7 @@
 //             Sert pour YouTube Music, les correspondances Spotify/Deezer, les extraits et les téléchargements.
 //  - sdk    : Spotify Web Playback SDK (ce navigateur devient un appareil Spotify, Premium)
 //  - remote : un appareil Spotify Connect piloté par l'API
-import { put, get, store, net, artUrl, music, mediaUrl } from './api.js';
+import { put, get, store, net, artUrl, music, musicAvailable, mediaUrl } from './api.js';
 import { native } from './native.js';
 import { resolveSource, playable } from './source.js';
 import { AudioEngine } from './audio.js';
@@ -223,7 +223,7 @@ export class Player extends EventTarget {
 
   async _extendWithRadio() {
     const seed = this.current;
-    if (!seed || !prefs.get('autoplay') || !net.online || this._radioSeed === seed.key) return false;
+    if (!seed || !prefs.get('autoplay') || !musicAvailable('radio') || this._radioSeed === seed.key) return false;
     this._radioSeed = seed.key;
     try {
       const { tracks } = await music('/api/radio', { method: 'POST', body: { track: seed } });

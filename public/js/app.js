@@ -243,10 +243,14 @@ function wireShell() {
   $('#avatar').addEventListener('click', (e) => accountMenu(e.currentTarget));
 
   const pill = $('#net-pill');
+  // appli autonome : seule la synchronisation dépend du serveur
+  if (native.engineBase) pill.lastChild.textContent = 'Synchronisation en attente';
   const netUpdate = () => { pill.hidden = net.online; document.body.classList.toggle('is-offline', !net.online); };
   net.addEventListener('change', () => {
     netUpdate();
-    toast(net.online ? 'Connexion au serveur rétablie' : 'Vous êtes hors connexion. Vos téléchargements restent disponibles.');
+    toast(net.online ? 'Connexion au serveur rétablie'
+      : native.engineBase ? 'Serveur Nexify injoignable : la musique reste disponible, la synchronisation reprendra plus tard.'
+        : 'Vous êtes hors connexion. Vos téléchargements restent disponibles.');
   });
   netUpdate();
 

@@ -1,6 +1,6 @@
 // Barre de lecture (bas de l'écran) et vue « Lecture en cours » (plein écran).
 import { h, icon, iconButton, setIcon, sourceMark, fmtTime, artwork, toast, popMenu, dominantColor } from '../ui.js';
-import { net, music } from '../api.js';
+import { net, music, musicAvailable } from '../api.js';
 import { native } from '../native.js';
 import { player } from '../player.js';
 import { data } from '../data.js';
@@ -189,11 +189,11 @@ export function createNowPlaying(el, shell) {
               removeLabel: 'Retirer de la file d’attente',
               onMove: (i, dir) => player.move(base + i, base + i + dir),
             }))
-          : h('p.muted', { style: { padding: '12px' } }, prefs.get('autoplay') && net.online ? 'Des titres similaires seront ajoutés automatiquement à la fin de la file.' : 'Aucun autre titre dans la file d’attente.'));
+          : h('p.muted', { style: { padding: '12px' } }, prefs.get('autoplay') && musicAvailable('radio') ? 'Des titres similaires seront ajoutés automatiquement à la fin de la file.' : 'Aucun autre titre dans la file d’attente.'));
       return;
     }
     // titres similaires (radio YouTube Music)
-    if (!net.online && !native.has('radio')) { panel.replaceChildren(h('p.muted', { style: { padding: '16px 12px' } }, 'Les suggestions nécessitent une connexion au serveur.')); return; }
+    if (!musicAvailable('radio')) { panel.replaceChildren(h('p.muted', { style: { padding: '16px 12px' } }, 'Les suggestions nécessitent une connexion au serveur.')); return; }
     const r = related.get(t.key);
     if (!r) {
       panel.replaceChildren(h('p.loading', {}, 'Recherche de titres similaires…'));

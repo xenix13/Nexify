@@ -169,7 +169,7 @@ export function createApp(config, deps = {}) {
   const cleanTracks = (list) => (Array.isArray(list) ? list : []).slice(0, 5000).map(sanitizeTrack).filter(Boolean);
 
   function cleanUserData(body) {
-    const out = { playlists: {}, likes: {} };
+    const out = { playlists: {}, likes: {}, settings: {} };
     const pls = Object.values(body?.playlists || {}).slice(0, 2000);
     for (const p of pls) {
       if (!p || !PLAYLIST_ID.test(String(p.id))) continue;
@@ -195,6 +195,13 @@ export function createApp(config, deps = {}) {
       const track = sanitizeTrack(l.track);
       if (!track || track.key !== l.key) continue;
       out.likes[track.key] = { key: track.key, track, at: clampTime(l.at) || updatedAt, updatedAt };
+    }
+    // réglages de l'appli (thème, égaliseur…) : noms simples, valeurs JSON de petite taille
+    for (const [key, entry] of Object.entries(body?.settings || {}).slice(0, 60)) {
+      if (!/^[A-Za-z][A-Za-z0-9]{0,39}$/.test(key) || !entry || typeof entry !== 'object') continue;
+      const json = JSON.stringify(entry.value ?? null);
+      if (json.length > 4000) continue;
+      out.settings[key] = { value: JSON.parse(json), updatedAt: clampTime(entry.updatedAt) };
     }
     return out;
   }

@@ -4,6 +4,7 @@
 import { net, post, mediaUrl } from './api.js';
 import { native } from './native.js';
 import { downloads } from './downloads.js';
+import { matchLocal } from './ytm-local.js';
 
 export function offlineError() {
   return Object.assign(new Error(native.isNative
@@ -14,7 +15,9 @@ export function offlineError() {
 // Peut-on lire ce titre sans le serveur ?
 export function playableWithoutServer(track) {
   if (!track) return false;
-  return downloads.has(track.key) || native.has('resolve') || (native.has('stream') && track.source === 'ytm');
+  if (downloads.has(track.key) || native.has('resolve')) return true;
+  if (!native.has('stream')) return false;
+  return track.source === 'ytm' || native.has('innertube'); // Android : correspondance faite sur le téléphone
 }
 export const playable = (track) => net.online || playableWithoutServer(track);
 
@@ -23,6 +26,19 @@ export async function resolveSource(track, { prefer, download = false, remoteOnl
     if (native.has('stream') && track.source === 'ytm') {
       const url = native.streamUrl(track.sourceId);
       return { plan: { mode: 'audio', url, local: true }, url };
+    }
+    // Android : titre Spotify / Deezer mis en correspondance par le téléphone lui-même
+    if (native.has('stream') && native.has('innertube') && track.source !== 'ytm') {
+      try {
+        const m = await matchLocal(track);
+        if (m?.videoId) {
+          const url = native.streamUrl(m.videoId);
+          return { plan: { mode: 'audio', url, local: true, via: { source: 'ytm', videoId: m.videoId, title: m.title, artists: m.artists } }, url };
+        }
+      } catch (e) {
+        if (!net.online) throw e.code === 'offline' ? offlineError() : e;
+      }
+      if (!net.online) throw Object.assign(new Error('Aucune version complète n’est disponible pour ce titre.'), { status: 404 });
     }
     if (native.has('resolve')) {
       try {
