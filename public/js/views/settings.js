@@ -7,10 +7,11 @@ import { downloads, fmtSize } from '../downloads.js';
 import { errorBlock, loading } from '../components.js';
 import { install } from '../install.js';
 import { native } from '../native.js';
+import { PLATFORMS, currentPlatform, latestRelease, directUrl, openDownload, newer } from '../apps.js';
 
 const SECTIONS = [
   ['playback', 'Lecture'], ['equalizer', 'Égaliseur'], ['appearance', 'Apparence'], ['downloads', 'Téléchargements'],
-  ['services', 'Services'], ['account', 'Compte'], ['about', 'À propos'],
+  ['services', 'Services'], ['account', 'Compte'], ['apps', 'Applications'], ['about', 'À propos'],
 ];
 
 // ---------- petites briques
@@ -68,6 +69,7 @@ export function viewSettings(ctx, section) {
       servicesGroup(redraw),
       accountGroup(redraw),
       data.user?.isAdmin ? group('users', 'Comptes utilisateurs', usersAdmin()) : null,
+      appsGroup(ctx),
       aboutGroup()));
   };
   const redraw = () => { const y = ctx.view.scrollTop; draw(); ctx.view.scrollTop = y; };
@@ -316,6 +318,45 @@ function usersAdmin() {
   };
   load();
   return box;
+}
+
+// ---------- applis à télécharger (dernière version publiée sur GitHub)
+function appsGroup(ctx) {
+  const body = h('div.set-row.col', {}, h('p.loading', {}, 'Recherche de la dernière version…'));
+  const size = (n) => (n ? ` • ${(n / 1e6).toLocaleString('fr-FR', { maximumFractionDigits: 0 })} Mo` : '');
+  latestRelease().then((rel) => {
+    if (!ctx.alive()) return;
+    const here = currentPlatform();
+    if (rel === null) {
+      body.replaceChildren(h('div.set-text', {}, h('b', {}, 'Aucune version publiée pour l’instant'),
+        h('small', {}, 'Les applis apparaîtront ici dès leur première publication (GitHub → Actions → Applications → Run workflow).')));
+      return;
+    }
+    const link = (p) => rel?.assets?.[p.file]?.url || directUrl(p.file);
+    if (native.isNative) {
+      const mine = native.kind === 'android' ? 'android' : ({ win32: 'windows', darwin: 'macos', linux: 'linux' })[window.nexifyNative?.os];
+      const p = PLATFORMS.find((x) => x.id === mine);
+      const update = rel && native.engineVersion && newer(rel.version, native.engineVersion);
+      body.replaceChildren(h('div', { style: { display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' } },
+        h('div.set-text', {}, h('b', {}, update ? `Nouvelle version disponible : ${rel.version}` : 'Nexify est à jour'),
+          h('small', {}, `Version installée : ${native.engineVersion || 'inconnue'}${rel ? ` • dernière version : ${rel.version}` : ''}`)),
+        update && p ? h('button.btn.primary', { type: 'button', onClick: () => openDownload(link(p)) }, icon('download'), 'Télécharger la mise à jour') : null));
+      return;
+    }
+    const main = PLATFORMS.find((x) => x.id === here);
+    const others = PLATFORMS.filter((x) => x !== main);
+    body.replaceChildren(
+      here === 'ios'
+        ? h('div.set-text', {}, h('b', {}, 'Pas d’appli pour iPhone et iPad'), h('small', {}, 'Utilisez l’appli web : dans Safari, touchez Partager puis « Sur l’écran d’accueil ».'))
+        : main ? h('div', { style: { display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' } },
+          h('div.set-text', {}, h('b', {}, `Nexify pour ${main.label}`), h('small', {}, `${main.hint}${rel ? ` • version ${rel.version}${size(rel.assets[main.file]?.size)}` : ''}`)),
+          h('button.btn.primary', { type: 'button', onClick: () => openDownload(link(main)) }, icon('download'), 'Télécharger')) : null,
+      h('p.hint', {}, 'Les applis récupèrent la musique elles-mêmes : votre serveur ne sert plus qu’à la connexion et à la synchronisation.'),
+      h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '4px' } },
+        others.map((p) => h('button.btn.ghost', { type: 'button', title: p.hint, onClick: () => openDownload(link(p)) }, icon('download'), p.label)),
+        main?.id === 'linux' || here === 'linux' ? h('button.btn.ghost', { type: 'button', onClick: () => openDownload(rel?.assets?.['Nexify-Linux.deb']?.url || directUrl('Nexify-Linux.deb')) }, icon('download'), 'Linux (.deb)') : null));
+  });
+  return group('apps', 'Applications', body);
 }
 
 function aboutGroup() {

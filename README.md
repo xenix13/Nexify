@@ -77,16 +77,16 @@ Le serveur reste nécessaire pour la **première connexion**, la **synchronisati
 
 ### Télécharger les applis
 
-Les fichiers sont construits par GitHub Actions et publiés dans les [Releases](https://github.com/xenix13/Nexify/releases) à chaque étiquette `v*` :
+**Depuis Nexify** : **Paramètres → Applications** (ou menu du compte → « Télécharger l’appli ») propose directement le bon fichier pour l’appareil. Les applis installées préviennent elles-mêmes quand une nouvelle version est publiée.
 
-- **Android** : `Nexify-android.apk` (autorisez l’installation depuis votre navigateur ou gestionnaire de fichiers).
-- **Windows** : `Nexify-…-win-x64.exe`. Windows SmartScreen peut avertir (appli non signée) : « Informations complémentaires » → « Exécuter quand même ».
-- **Linux** : `.AppImage` (rendre exécutable) ou `.deb`.
-- **macOS** : `.dmg` (appli non signée : clic droit → Ouvrir la première fois).
+**Publier une version** : onglet **Actions → Applications → Run workflow**. GitHub construit les applis puis les publie dans la Release `v<version>` (créée ou mise à jour), avec des noms de fichiers fixes :
 
-Au premier lancement, indiquez l’adresse de votre serveur (par exemple `http://192.168.1.50:8443`), puis connectez-vous.
+- **Android** : `Nexify-Android.apk` (autorisez l’installation depuis votre navigateur ou gestionnaire de fichiers ; si Play Protect avertit : « Installer quand même »).
+- **Windows** : `Nexify-Windows.exe`. Windows SmartScreen peut avertir (appli non signée) : « Informations complémentaires » → « Exécuter quand même ».
+- **Linux** : `Nexify-Linux.AppImage` (rendre exécutable) ou `Nexify-Linux.deb`.
+- **macOS** : `Nexify-macOS.dmg` (appli non signée : clic droit → Ouvrir la première fois).
 
-Pour construire sans publier : onglet **Actions → Applications → Run workflow** ; les fichiers sont dans les artefacts du lancement.
+Au premier lancement, indiquez l’adresse de votre serveur (par exemple `http://192.168.1.50:8443`, ou l’adresse de votre reverse proxy), puis connectez-vous. Les applis n’acceptent pas le certificat auto-signé : utilisez le HTTP simple sur le réseau local ou un certificat reconnu.
 
 ### Signature de l’APK Android (recommandé)
 

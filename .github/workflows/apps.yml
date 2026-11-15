@@ -1,6 +1,8 @@
 # Applis Nexify : Windows, Linux, macOS (Electron) et Android (Capacitor).
-# - Lancement manuel (onglet Actions → Applications → Run workflow) : fichiers en « artefacts ».
-# - Étiquette v* (ex. v1.1.0) : publication dans une Release GitHub.
+# Lancement manuel (onglet Actions → Applications → Run workflow) ou étiquette v* :
+# construction puis publication dans la Release v<version> (créée ou mise à jour).
+# Les noms de fichiers sont fixes : l'appli Nexify propose ainsi le téléchargement
+# de la dernière version (Paramètres → Applications).
 name: Applications
 
 on:
@@ -84,31 +86,43 @@ jobs:
           if [ -n "$NEXIFY_KEYSTORE" ]; then
             node ../scripts/android-setup.mjs
             ./gradlew assembleRelease --no-daemon
-            cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/Nexify-android.apk"
+            cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/Nexify-Android.apk"
           else
             ./gradlew assembleDebug --no-daemon
-            cp app/build/outputs/apk/debug/app-debug.apk "$GITHUB_WORKSPACE/Nexify-android.apk"
+            cp app/build/outputs/apk/debug/app-debug.apk "$GITHUB_WORKSPACE/Nexify-Android.apk"
           fi
       - uses: actions/upload-artifact@v4
         with:
           name: nexify-android
-          path: Nexify-android.apk
+          path: Nexify-Android.apk
           if-no-files-found: error
 
   release:
     name: Publication
-    if: startsWith(github.ref, 'refs/tags/v')
     needs: [desktop, android]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*
-          body: |
-            **Android** : `Nexify-android.apk` (autorisez l'installation depuis cette source).
-            **Windows** : `Nexify-…-win-x64.exe`. **Linux** : `.AppImage` ou `.deb`. **macOS** : `.dmg`.
-            Au premier lancement, indiquez l'adresse de votre serveur Nexify. La musique est ensuite récupérée par l'appareil lui-même.
+      - name: Release v<version> (création ou mise à jour)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V="v$(node -p "require('./package.json').version")"
+          ls -la dist
+          if ! gh release view "$V" >/dev/null 2>&1; then
+            gh release create "$V" --title "Nexify $V" --latest --notes "$(cat <<'NOTES'
+          Téléchargez l'appli depuis Nexify (Paramètres → Applications) ou ci-dessous :
+          - **Android** : `Nexify-Android.apk`
+          - **Windows** : `Nexify-Windows.exe`
+          - **Linux** : `Nexify-Linux.AppImage` ou `Nexify-Linux.deb`
+          - **macOS** : `Nexify-macOS.dmg`
+
+          Au premier lancement, indiquez l'adresse de votre serveur Nexify.
+          NOTES
+          )"
+          fi
+          gh release upload "$V" dist/* --clobber

@@ -9,6 +9,7 @@ import { data } from './data.js';
 import { downloads } from './downloads.js';
 import { player } from './player.js';
 import { install } from './install.js';
+import { checkAppUpdate, currentPlatform } from './apps.js';
 import { go } from './components.js';
 import { viewHome, viewHistory } from './views/home.js';
 import { viewSearch } from './views/search.js';
@@ -269,6 +270,11 @@ function wireShell() {
   side();
 
   player.addEventListener('notice', (e) => toast(e.detail, 'error'));
+
+  // applis installées : nouvelle version publiée ?
+  setTimeout(() => checkAppUpdate((rel, url) => toast(`Nouvelle version de l’appli Nexify : ${rel.version}.`, 'info', {
+    label: 'Télécharger', sticky: true, fn: () => import('./apps.js').then((m) => m.openDownload(url)),
+  })), 5000);
 }
 
 function accountMenu(anchor) {
@@ -280,6 +286,7 @@ function accountMenu(anchor) {
     { icon: 'download', label: 'Téléchargements', action: () => go('#/library/downloads') },
     net.online ? { icon: 'refresh', label: 'Synchroniser maintenant', action: async () => { const ok = await data.sync(); toast(ok ? 'Synchronisation terminée' : 'Synchronisation impossible pour le moment.', ok ? 'info' : 'error'); } } : null,
     install.state() === 'prompt' ? { icon: 'plus', label: 'Installer l’application', action: () => install.prompt() } : null,
+    !native.isNative && currentPlatform() !== 'ios' ? { icon: 'download', label: 'Télécharger l’appli', action: () => go('#/settings/apps') } : null,
     '-',
     { icon: 'logout', label: 'Se déconnecter', action: logout, danger: true },
   ], h('div.menu-head', {}, h('span.avatar', {}, (u?.username || '?')[0]), h('div', {}, h('b', {}, u?.username || ''), h('small', {}, net.online ? (data.lastSync ? 'Synchronisé' : 'Connecté') : 'Hors connexion'))));
